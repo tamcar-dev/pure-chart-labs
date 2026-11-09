@@ -1,5 +1,4 @@
-// Bundles the real app with a stand-in chart module (see fake-lightweight-charts.js).
-// Use this to test React/DOM interaction logic. It does NOT test the real chart library's rendering.
+// Bundle the real app with deterministic feed and cache adapters for browser interaction tests.
 import { build } from 'esbuild'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
@@ -7,11 +6,23 @@ import fs from 'node:fs'
 const here = path.dirname(fileURLToPath(import.meta.url))
 const root = path.resolve(here, '..')
 const out = path.join(here, 'dist')
+const mocks = {
+  deriv: path.join(here, 'mock-deriv.js'),
+  db: path.join(here, 'mock-db.js'),
+}
 await build({
   entryPoints: [path.join(root, 'src/main.jsx')],
   bundle: true, outdir: out, format: 'esm', jsx: 'automatic',
   loader: { '.js': 'jsx', '.jsx': 'jsx', '.css': 'css' },
-  alias: { 'lightweight-charts': path.join(here, 'fake-lightweight-charts.js') },
+  plugins: [{
+    name: 'e2e-adapters',
+    setup(buildApi) {
+      buildApi.onResolve({ filter: /^\.\/(deriv|db)$/ }, (args) => {
+        const target = args.path.slice(2)
+        if (mocks[target]) return { path: mocks[target] }
+      })
+    }
+  }],
   define: { 'process.env.NODE_ENV': '"development"' },
   logLevel: 'warning'
 })
