@@ -8,7 +8,8 @@ const TIMEFRAMES = [
   ['1m',60],['2m',120],['5m',300],['10m',600],['15m',900],['30m',1800],
   ['1H',3600],['2H',7200],['4H',14400],['8H',28800],['1D',86400]
 ]
-const makePanel = (symbol='R_75') => ({ id: crypto.randomUUID?.() || `${Date.now()}-${Math.random()}`, symbol, tf:900 })
+const makeId = () => globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`
+const makePanel = (symbol='R_75') => ({ id: makeId(), symbol, tf:900 })
 
 function DrawingLayer({ chart, series, tool, drawings, setDrawings, panelId }) {
   const [points, setPoints] = useState([])
@@ -30,22 +31,28 @@ function DrawingLayer({ chart, series, tool, drawings, setDrawings, panelId }) {
     chart.subscribeCrosshairMove(redraw)
     return ()=>{chart.timeScale().unsubscribeVisibleTimeRangeChange(redraw);chart.unsubscribeCrosshairMove(redraw)}
   },[chart])
+  useEffect(() => {
+    if (!chart || !series || !tool) return
+    const handleChartClick = param => {
+      if (!param.point) return
+      const {x,y}=param.point
+      const time=param.time ?? chart.timeScale().coordinateToTime(x)
+      const price=series.coordinateToPrice(y)
+      if (time == null || price == null) return
+      const p={time,price}
+      if (tool==='horizontal' || tool==='vertical') {
+        setDrawings(d=>[...d,{id:makeId(),type:tool,a:p}]); return
+      }
+      const next=[...points,p]
+      if (next.length===2) {
+        setDrawings(d=>[...d,{id:makeId(),type:tool,a:next[0],b:next[1]}]); setPoints([])
+      } else setPoints(next)
+    }
+    chart.subscribeClick(handleChartClick)
+    return () => chart.unsubscribeClick(handleChartClick)
+  },[chart,series,tool,points,setDrawings])
   const coords = p => ({ x:chart?.timeScale().timeToCoordinate(p.time), y:series?.priceToCoordinate(p.price) })
-  const click = e => {
-    if (!tool || !chart || !series) return
-    const rect=e.currentTarget.getBoundingClientRect(), x=e.clientX-rect.left, y=e.clientY-rect.top
-    const time=chart.timeScale().coordinateToTime(x), price=series.coordinateToPrice(y)
-    if (time == null || price == null) return
-    const p={time,price}
-    if (tool==='horizontal' || tool==='vertical') {
-      setDrawings(d=>[...d,{id:crypto.randomUUID(),type:tool,a:p}]); return
-    }
-    const next=[...points,p]; setPoints(next)
-    if (next.length===2) {
-      setDrawings(d=>[...d,{id:crypto.randomUUID(),type:tool,a:next[0],b:next[1]}]); setPoints([])
-    }
-  }
-  return <svg ref={svgRef} className={`drawing-layer ${tool?'drawing-active':''}`} width="100%" height="100%" onClick={click}>
+  return <svg ref={svgRef} className={`drawing-layer ${tool?'drawing-active':''}`} width="100%" height="100%">
     {drawings.map(d=>{
       const a=coords(d.a), b=d.b?coords(d.b):null
       if (a.x==null || a.y==null) return null
