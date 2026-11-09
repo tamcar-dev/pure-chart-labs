@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { CandlestickSeries, createChart, CrosshairMode } from 'lightweight-charts'
 import { connectDeriv, fetchActiveSymbols, MARKET_FALLBACKS } from './deriv'
 import { loadCandles, saveCandles } from './db'
@@ -12,122 +12,13 @@ const TIMEFRAMES = [
 const makeId = () => globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`
 const makePanel = (symbol='R_75') => ({ id: makeId(), symbol, tf:900 })
 
-function DrawingLayer({ chart, series, chartContainer, tool, drawings, setDrawings, panelId }) {
-  const [start,setStart]=useState(null),[preview,setPreview]=useState(null),[selected,setSelected]=useState(null)
-  const [size,setSize]=useState({w:0,h:0}),[,redraw]=useState(0)
-  const svgRef=useRef(null),hoverRef=useRef(null),dragRef=useRef(null)
-  useEffect(()=>{setStart(null);setPreview(null);setSelected(null)},[tool,panelId])
-  useEffect(()=>{
-    if(!svgRef.current)return
-    const ro=new ResizeObserver(entries=>{const r=entries[0].contentRect;setSize({w:r.width,h:r.height})})
-    ro.observe(svgRef.current);return()=>ro.disconnect()
-  },[])
-  const coords=p=>({x:chart?.timeScale().timeToCoordinate(p.time),y:series?.priceToCoordinate(p.price)})
-  const toPoint=param=>{
-    if(!param?.point||!chart||!series)return null
-    const {x,y}=param.point,time=param.time??chart.timeScale().coordinateToTime(x),price=series.coordinateToPrice(y)
-    return time==null||price==null?null:{time,price}
-  }
-  const hitTest=(x,y)=>{
-    const distance=(px,py)=>Math.hypot(px-x,py-y)
-    let best=null
-    for(const d of drawings){
-      const a=coords(d.a),b=d.b?coords(d.b):null
-      if(a.x==null||a.y==null)continue
-      for(const [key,p] of [['a',a],['b',b]])if(p&&p.x!=null&&p.y!=null&&distance(p.x,p.y)<12)best={id:d.id,part:key,dist:distance(p.x,p.y)}
-      let near=Infinity
-      if(d.type==='horizontal')near=Math.abs(y-a.y)
-      else if(d.type==='vertical')near=Math.abs(x-a.x)
-      else if(b&&b.x!=null&&b.y!=null){
-        const dx=b.x-a.x,dy=b.y-a.y
-        if(d.type==='rectangle'){
-          const left=Math.min(a.x,b.x),right=Math.max(a.x,b.x),top=Math.min(a.y,b.y),bottom=Math.max(a.y,b.y)
-          if(x>=left&&x<=right&&y>=top&&y<=bottom)near=0
-          else near=Math.min(distance(x,top),distance(x,bottom),distance(left,y),distance(right,y))
-        }else if(d.type==='fibonacci'){
-          near=Math.min(...[0,.236,.382,.5,.618,.786,1].map(level=>Math.abs(y-(a.y+dy*level))))
-        }else{
-          const len2=dx*dx+dy*dy,t=len2?Math.max(0,Math.min(1,((x-a.x)*dx+(y-a.y)*dy)/len2)):0
-          near=distance(a.x+t*dx,a.y+t*dy)
-        }
-      }
-      if(near<12&&(!best||near<best.dist))best={id:d.id,part:'move',dist:near}
-    }
-    return best
-  }
-  useEffect(()=>{
-    if(!chart)return
-    const handleMove=param=>{
-      hoverRef.current=param;redraw(v=>v+1)
-      const p=toPoint(param),drag=dragRef.current
-      if(tool&&start&&p)setPreview(p)
-      if(!drag||!p)return
-      const dt=Number(p.time)-Number(drag.origin.time),dp=p.price-drag.origin.price
-      const shift=q=>({time:Number(q.time)+dt,price:q.price+dp})
-      setDrawings(list=>list.map(d=>d.id!==drag.id?d:drag.part==='a'?{...d,a:p}:drag.part==='b'?{...d,b:p}:{...d,a:shift(drag.base.a),...(drag.base.b?{b:shift(drag.base.b)}:{})}))
-    }
-    const handleClick=param=>{
-      const p=toPoint(param)
-      if(!p)return
-      if(!tool){const hit=param.point?hitTest(param.point.x,param.point.y):null;setSelected(hit?.id??null);return}
-      if(tool==='horizontal'||tool==='vertical'){
-        const id=makeId();setDrawings(list=>[...list,{id,type:tool,a:p}]);setSelected(id);return
-      }
-      if(!start){setStart(p);setPreview(p);return}
-      const id=makeId();setDrawings(list=>[...list,{id,type:tool,a:start,b:p}]);setSelected(id);setStart(null);setPreview(null)
-    }
-    chart.subscribeCrosshairMove(handleMove);chart.subscribeClick(handleClick)
-    return()=>{chart.unsubscribeCrosshairMove(handleMove);chart.unsubscribeClick(handleClick)}
-  },[chart,series,tool,start,drawings,setDrawings])
-  useEffect(()=>{
-    if(!chartContainer)return
-    const down=e=>{
-      if(tool||!hoverRef.current?.point)return
-      const {x,y}=hoverRef.current.point,hit=hitTest(x,y)
-      if(!hit){setSelected(null);return}
-      const base=drawings.find(d=>d.id===hit.id),origin=toPoint(hoverRef.current)
-      if(!base||!origin)return
-      setSelected(hit.id);dragRef.current={id:hit.id,part:hit.part,base:JSON.parse(JSON.stringify(base)),origin}
-      e.preventDefault()
-    }
-    const up=()=>{dragRef.current=null}
-    chartContainer.addEventListener('pointerdown',down)
-    window.addEventListener('pointerup',up)
-    return()=>{chartContainer.removeEventListener('pointerdown',down);window.removeEventListener('pointerup',up)}
-  },[chartContainer,tool,drawings])
-  useEffect(()=>{
-    if(!selected)return
-    const key=e=>{if(e.key==='Delete'||e.key==='Backspace'){e.preventDefault();setDrawings(list=>list.filter(d=>d.id!==selected));setSelected(null)}}
-    window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key)
-  },[selected,setDrawings])
-  const renderDrawing=(d,ghost=false)=>{
-    const a=coords(d.a),b=d.b?coords(d.b):null,active=selected===d.id&&!ghost
-    if(a.x==null||a.y==null)return null
-    const stroke=active?'#4dd8c7':ghost?'#e4b84f88':'#e4b84f',width=active?2.4:1.6
-    if(d.type==='horizontal')return <line key={d.id} x1="0" x2={size.w} y1={a.y} y2={a.y} stroke={stroke} strokeWidth={width}/>
-    if(d.type==='vertical')return <line key={d.id} x1={a.x} x2={a.x} y1="0" y2={size.h} stroke={stroke} strokeWidth={width}/>
-    if(!b||b.x==null||b.y==null)return null
-    if(d.type==='rectangle')return <rect key={d.id} x={Math.min(a.x,b.x)} y={Math.min(a.y,b.y)} width={Math.abs(b.x-a.x)} height={Math.abs(b.y-a.y)} fill="#2eb6a3" fillOpacity={active?'.20':'.10'} stroke={stroke} strokeWidth={width}/>
-    if(d.type==='fibonacci')return <g key={d.id}>{[0,.236,.382,.5,.618,.786,1].map(level=>{const y=a.y+(b.y-a.y)*level;return <g key={level}><line x1="0" x2={size.w} y1={y} y2={y} stroke={stroke} strokeOpacity=".8" strokeDasharray="4 3"/><text x="8" y={y-3} fill="#c6d0dc" fontSize="10">{Math.round(level*1000)/10}%</text></g>})}</g>
-    return <line key={d.id} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={stroke} strokeWidth={width}/>
-  }
-  const ghost=start&&preview?{id:'preview',type:tool,a:start,b:preview}:null
-  return <svg ref={svgRef} className={`drawing-layer ${tool?'drawing-active':''}`} width="100%" height="100%">
-    {drawings.map(d=>renderDrawing(d))}{ghost&&renderDrawing(ghost,true)}
-    {selected&&drawings.find(d=>d.id===selected)&&(()=>{const d=drawings.find(x=>x.id===selected),a=coords(d.a),b=d.b?coords(d.b):null;return <g className="drawing-handles"><circle cx={a.x} cy={a.y} r="5"/>{b&&b.x!=null&&b.y!=null&&<circle cx={b.x} cy={b.y} r="5"/>}</g>})()}
-  </svg>
-}
-
-function ChartPanel({ panel, markets, onChange, onRemove, tool, onStatus }) {
+function ChartPanel({ panel, markets, onChange, onRemove, onStatus }) {
   const el=useRef(null), chartRef=useRef(null), seriesRef=useRef(null), barsRef=useRef([]), modeRef=useRef('LIVE')
   const [status,setStatus]=useState(navigator.onLine?'connecting':'offline'), [chartApi,setChartApi]=useState(null)
-  const [price,setPrice]=useState(null), [loaded,setLoaded]=useState(false), [mode,setMode]=useState('LIVE'), [redoDrawings,setRedoDrawings]=useState([])
-  const [replayIndex,setReplayIndex]=useState(0), [drawings,setDrawings]=useState([])
+  const [price,setPrice]=useState(null), [loaded,setLoaded]=useState(false), [mode,setMode]=useState('LIVE')
+  const [replayIndex,setReplayIndex]=useState(0)
   const label=markets.find(m=>m.symbol===panel.symbol)?.display_name || panel.symbol
   const timeframe=TIMEFRAMES.find(x=>x[1]===panel.tf)?.[0] || `${panel.tf}s`
-  const storageKey=`pcl-drawings:${panel.id}`
-  useEffect(()=>{try{setDrawings(JSON.parse(localStorage.getItem(storageKey)||'[]'))}catch{setDrawings([])}},[storageKey])
-  useEffect(()=>{try{localStorage.setItem(storageKey,JSON.stringify(drawings))}catch{}},[storageKey,drawings])
   useEffect(()=>{modeRef.current=mode},[mode])
   useEffect(()=>{
     const chart=createChart(el.current,{
@@ -185,10 +76,6 @@ function ChartPanel({ panel, markets, onChange, onRemove, tool, onStatus }) {
   const replay=()=>{if(!barsRef.current.length)return;const n=Math.max(1,barsRef.current.length-100);setReplayIndex(n);setMode('REPLAY');seriesRef.current?.setData(barsRef.current.slice(0,n))}
   const step=()=>{const n=Math.min(replayIndex+1,barsRef.current.length);setReplayIndex(n);seriesRef.current?.setData(barsRef.current.slice(0,n))}
   const exit=()=>{setMode('LIVE');seriesRef.current?.setData(barsRef.current);chartRef.current?.timeScale().fitContent()}
-  const updateDrawings=updater=>{setDrawings(current=>typeof updater==='function'?updater(current):updater);setRedoDrawings([])}
-  const undoDrawing=()=>{if(!drawings.length)return;setRedoDrawings(r=>[...r,drawings.at(-1)]);setDrawings(drawings.slice(0,-1))}
-  const redoDrawing=()=>{if(!redoDrawings.length)return;setDrawings(d=>[...d,redoDrawings.at(-1)]);setRedoDrawings(redoDrawings.slice(0,-1))}
-  const clearDrawings=()=>{setDrawings([]);setRedoDrawings([])}
   return <article className="chart-card">
     <div className="chart-card-head">
       <select aria-label="Market" value={panel.symbol} onChange={e=>onChange({...panel,symbol:e.target.value})}>
@@ -202,12 +89,10 @@ function ChartPanel({ panel, markets, onChange, onRemove, tool, onStatus }) {
       <button className="tiny-btn" onClick={()=>chartRef.current?.timeScale().fitContent()} title="Fit chart">Fit</button>
       <button className="tiny-btn" onClick={mode==='REPLAY'?exit:replay}>{mode==='REPLAY'?'Exit':'Replay'}</button>
       {mode==='REPLAY'&&<button className="tiny-btn" onClick={step}>Step</button>}
-      <button className="tiny-btn" onClick={undoDrawing} title="Undo drawing" disabled={!drawings.length}>↶</button><button className="tiny-btn" onClick={redoDrawing} title="Redo drawing" disabled={!redoDrawings.length}>↷</button><button className="tiny-btn danger" onClick={clearDrawings} title="Clear drawings">Clear</button>
       <button className="tiny-btn danger" onClick={()=>onRemove(panel.id)} title="Remove chart">×</button>
     </div>
     <div className="chart-wrap">
       <div ref={el} className="chart"/>
-      <DrawingLayer chart={chartApi?.chart} series={chartApi?.series} chartContainer={el.current} tool={tool} drawings={drawings} setDrawings={updateDrawings} panelId={panel.id}/>
       {!loaded&&<div className="loading">Loading cached candles…</div>}
       {loaded&&!barsRef.current.length&&status!=='connected'&&<div className="loading">No cached history. Check connection or import a CSV.</div>}
     </div>
@@ -218,7 +103,7 @@ function ChartPanel({ panel, markets, onChange, onRemove, tool, onStatus }) {
 export default function App(){
   const [markets,setMarkets]=useState(MARKET_FALLBACKS)
   const [panels,setPanels]=useState(()=>loadPanels(window.localStorage,makePanel))
-  const [tool,setTool]=useState(null),[marketStatus,setMarketStatus]=useState('Loading markets…')
+  const [marketStatus,setMarketStatus]=useState('Loading markets…')
   const [csvMessage,setCsvMessage]=useState('')
   const fileRef=useRef(null)
   useEffect(()=>{savePanels(window.localStorage,panels)},[panels])
@@ -243,7 +128,6 @@ export default function App(){
     }catch(err){setCsvMessage(`CSV import failed: ${err.message}`)}
     e.target.value=''
   }
-  const activeTool=tool
   return <main className="app">
     <header className="topbar">
       <div className="brand"><span className="brand-mark">◈</span><b>Pure</b><span>Chart</span><small className="labs">LABS</small></div>
@@ -253,17 +137,10 @@ export default function App(){
       <button className="navbtn" onClick={addChart}>＋ Add chart</button>
       <button className="navbtn" onClick={()=>fileRef.current?.click()}>⇧ Import CSV</button>
       <input ref={fileRef} type="file" accept=".csv,text/csv" hidden onChange={importCSV}/>
-      <button className="iconbtn" onClick={()=>setTool(null)} title="Select, move, or edit drawings">⌖</button>
       <span className="status"><i className="online"/> LOCAL-FIRST</span>
     </header>
-    <div className="toolstrip">
-      <span>DRAW</span>
-      {[['trend','／','Trend line'],['horizontal','―','Horizontal line'],['vertical','│','Vertical line'],['rectangle','□','Rectangle'],['fibonacci','F','Fibonacci']].map(([id,glyph,title])=><button key={id} title={title} className={tool===id?'selected':''} onClick={()=>setTool(tool===id?null:id)}>{glyph}</button>)}
-      <span className="tool-hint">{tool?`Click ${tool==='horizontal'||tool==='vertical'?'once':'twice'} on chart · move cursor for preview`:'Click a drawing to select, drag to move/edit endpoints · Delete removes it'}</span>
-      {csvMessage&&<span className="csv-message">{csvMessage}</span>}
-    </div>
     <section className={`workspace chart-grid count-${Math.min(panels.length,4)}`}>
-      {panels.map(panel=><ChartPanel key={panel.id} panel={panel} markets={markets} onChange={updatePanel} onRemove={id=>setPanels(p=>p.length>1?p.filter(x=>x.id!==id):p)} tool={activeTool}/>)}
+      {panels.map(panel=><ChartPanel key={panel.id} panel={panel} markets={markets} onChange={updatePanel} onRemove={id=>setPanels(p=>p.length>1?p.filter(x=>x.id!==id):p)}/>)}
     </section>
     <footer className="bottom"><span>PURE CHART LABS · RESEARCH WORKSPACE</span><span>Public market data only · No trade execution · CSV and cached history stay in this browser</span></footer>
   </main>
