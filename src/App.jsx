@@ -58,7 +58,7 @@ function ChartPanel({ panel, markets, onChange, onRemove, tool }) {
     })()
     const cleanup=connectDeriv({
       symbol:panel.symbol,granularity:panel.tf,
-      onStatus:s=>{if(!cancelled){setStatus(s);onStatus?.(s)}},
+      onStatus:s=>{if(!cancelled)setStatus(s)},
       onCandles:incoming=>{
         if(cancelled||!incoming.length)return
         const map=new Map(barsRef.current.map(b=>[b.time,b]))
