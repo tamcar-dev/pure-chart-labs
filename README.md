@@ -21,6 +21,7 @@ npm run preview
 - The app requests Deriv's public active-symbol catalogue and filters it to synthetic/derived markets.
 - A short built-in volatility-index list is used if catalogue discovery is unavailable.
 - Each chart has its own symbol, timeframe, live market-data connection, local candle cache, replay state and drawings.
+- History is fetched in pages, targeting up to 10,000 candles per chart when Deriv has that much data available.
 - Market data uses Deriv's current public WebSocket endpoint; public market-data requests do not require account authentication.
 - The application does not request account credentials or execute trades.
 
@@ -35,7 +36,9 @@ Use **Import CSV** to import OHLC candles into the first chart's selected market
 Timestamps are interpreted as Unix seconds/milliseconds or parseable date/time text. The CSV import is intentionally conservative: rows with invalid OHLC relationships are skipped.
 
 ## Drawings
-Select Trend line, Horizontal line, Vertical line, Rectangle or Fibonacci, then click on a chart (once for horizontal/vertical, twice for the others). Drawings are saved locally per chart panel and have per-chart undo/redo/clear controls. Drawings are not exported into the candle CSV.
+The workspace exposes only **Line** and **Box**. Choose one, then click two chart points; click **Cursor** to select a drawing, then use Delete/Backspace to remove it. Ctrl/Cmd+Z and Ctrl/Cmd+Shift+Z undo/redo; per-chart buttons also provide undo, redo and clear. Drawings are anchored to time/price, saved locally per panel, market and timeframe, and are not exported in candle CSV files.
+
+These are custom SVG overlays connected to Lightweight Charts' chart events and coordinate APIs. They are not TradingView's proprietary Charting Library drawing tools and do not provide full TradingView parity.
 
 ## Offline
 - Downloaded/imported candles are stored in IndexedDB per symbol and timeframe.
@@ -45,5 +48,9 @@ Select Trend line, Horizontal line, Vertical line, Rectangle or Fibonacci, then 
 
 ## Important limitations
 - Deriv catalogue availability and symbol access depend on the public API and may change.
-- Weekly/monthly aggregation, Fibonacci tools, channels, indicators, full-featured replay, drawing selection/editing/deletion, channels, measurement, indicators, full-featured replay, and gap-repair backfill are not implemented in this release.
+- Weekly/monthly aggregation, channels, indicators, full-featured replay, dragging/editing drawing anchors, measurement, and gap-repair backfill are not implemented in this release.
 - This is a repaired functional foundation, not a claim of complete TradingView parity.
+
+## Tests
+- `npm test` runs data, panel and drawing-model unit tests.
+- `npm run test:e2e` builds a fake-chart browser bundle and tests drawing interactions with Chromium (install Playwright's Chromium first if needed). The fake chart verifies UI/event wiring, not the real chart library's rendering.
