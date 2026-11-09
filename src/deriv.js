@@ -1,4 +1,5 @@
 const WS_URL = 'wss://api.derivws.com/trading/v1/options/ws/public'
+export const CANDLE_HISTORY_LIMIT = 10000
 
 export const MARKET_FALLBACKS = [
   {symbol:'R_10',display_name:'Volatility 10 Index'},
@@ -50,7 +51,7 @@ export function connectDeriv({symbol,granularity,onCandles,onTick,onStatus}) {
     try{ws=new WebSocket(WS_URL)}catch(e){scheduleRetry();return}
     ws.onopen=()=>{
       attempt=0;onStatus('connected')
-      send({ticks_history:symbol,count:3000,end:'latest',style:'candles',granularity,subscribe:1})
+      send({ticks_history:symbol,count:CANDLE_HISTORY_LIMIT,end:'latest',style:'candles',granularity,subscribe:1})
     }
     ws.onmessage=event=>{
       let msg;try{msg=JSON.parse(event.data)}catch{return}

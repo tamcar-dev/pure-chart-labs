@@ -25,7 +25,7 @@ export async function saveCandles(symbol, granularity, candles) {
   });
   db.close();
 }
-export async function loadCandles(symbol, granularity, limit = 3000) {
+export async function loadCandles(symbol, granularity, limit = 10000) {
   const db = await openDB();
   const rows = await new Promise((resolve, reject) => {
     const tx = db.transaction(STORE, 'readonly');

@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { CandlestickSeries, createChart, CrosshairMode } from 'lightweight-charts'
-import { connectDeriv, fetchActiveSymbols, MARKET_FALLBACKS } from './deriv'
+import { connectDeriv, fetchActiveSymbols, MARKET_FALLBACKS, CANDLE_HISTORY_LIMIT } from './deriv'
 import { loadCandles, saveCandles } from './db'
 import { parseCandleCSV } from './csv'
 import { loadPanels, savePanels } from './panelState'
+import DrawingOverlay from './DrawingOverlay'
 
 const TIMEFRAMES = [
   ['1m',60],['2m',120],['5m',300],['10m',600],['15m',900],['30m',1800],
@@ -12,13 +13,21 @@ const TIMEFRAMES = [
 const makeId = () => globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`
 const makePanel = (symbol='R_75') => ({ id: makeId(), symbol, tf:900 })
 
-function ChartPanel({ panel, markets, onChange, onRemove, onStatus }) {
+function ChartPanel({ panel, markets, onChange, onRemove, tool }) {
   const el=useRef(null), chartRef=useRef(null), seriesRef=useRef(null), barsRef=useRef([]), modeRef=useRef('LIVE')
   const [status,setStatus]=useState(navigator.onLine?'connecting':'offline'), [chartApi,setChartApi]=useState(null)
   const [price,setPrice]=useState(null), [loaded,setLoaded]=useState(false), [mode,setMode]=useState('LIVE')
   const [replayIndex,setReplayIndex]=useState(0)
+  const [drawings,setDrawings]=useState(()=>{
+    try {
+      const saved=JSON.parse(localStorage.getItem(`pcl-drawings:${panel.id}`)||'[]')
+      return Array.isArray(saved)?saved.map(d=>({...d,type:d.type==='trend'?'line':d.type==='rectangle'?'box':d.type})):[]
+    } catch { return [] }
+  })
   const label=markets.find(m=>m.symbol===panel.symbol)?.display_name || panel.symbol
   const timeframe=TIMEFRAMES.find(x=>x[1]===panel.tf)?.[0] || `${panel.tf}s`
+  const drawingsKey=`pcl-drawings:${panel.id}`
+  useEffect(()=>{try{localStorage.setItem(drawingsKey,JSON.stringify(drawings))}catch{}},[drawingsKey,drawings])
   useEffect(()=>{modeRef.current=mode},[mode])
   useEffect(()=>{
     const chart=createChart(el.current,{
@@ -37,11 +46,11 @@ function ChartPanel({ panel, markets, onChange, onRemove, onStatus }) {
     barsRef.current=[];setLoaded(false);setPrice(null);setMode('LIVE')
     ;(async()=>{
       try{
-        const cached=await loadCandles(panel.symbol,panel.tf)
+        const cached=await loadCandles(panel.symbol,panel.tf,CANDLE_HISTORY_LIMIT)
         if(cancelled)return
         const merged=new Map(cached.map(b=>[b.time,b]))
         barsRef.current.forEach(b=>merged.set(b.time,b))
-        barsRef.current=[...merged.values()].sort((a,b)=>a.time-b.time).slice(-5000)
+        barsRef.current=[...merged.values()].sort((a,b)=>a.time-b.time).slice(-CANDLE_HISTORY_LIMIT)
         seriesRef.current?.setData(barsRef.current)
         if(barsRef.current.length)chartRef.current?.timeScale().fitContent()
       }catch(e){console.warn('Candle cache read failed',e)}
@@ -54,7 +63,7 @@ function ChartPanel({ panel, markets, onChange, onRemove, onStatus }) {
         if(cancelled||!incoming.length)return
         const map=new Map(barsRef.current.map(b=>[b.time,b]))
         incoming.forEach(b=>map.set(b.time,b))
-        const merged=[...map.values()].sort((a,b)=>a.time-b.time).slice(-5000)
+        const merged=[...map.values()].sort((a,b)=>a.time-b.time).slice(-CANDLE_HISTORY_LIMIT)
         barsRef.current=merged;seriesRef.current?.setData(merged)
         saveCandles(panel.symbol,panel.tf,incoming).catch(e=>console.warn('Candle cache write failed',e))
         const last=merged.at(-1);if(last)setPrice(last.close)
@@ -67,6 +76,7 @@ function ChartPanel({ panel, markets, onChange, onRemove, onStatus }) {
         else if(!last||start>last.time)next={time:start,open:tick.price,high:tick.price,low:tick.price,close:tick.price}
         else return
         if(last&&last.time===start)bars[bars.length-1]=next;else bars.push(next)
+        if(bars.length>CANDLE_HISTORY_LIMIT)bars.splice(0,bars.length-CANDLE_HISTORY_LIMIT)
         if(modeRef.current!=='REPLAY')seriesRef.current?.update(next);setPrice(tick.price)
         saveCandles(panel.symbol,panel.tf,[next]).catch(e=>console.warn(e))
       }
@@ -93,6 +103,7 @@ function ChartPanel({ panel, markets, onChange, onRemove, onStatus }) {
     </div>
     <div className="chart-wrap">
       <div ref={el} className="chart"/>
+      <DrawingOverlay chart={chartApi?.chart} series={chartApi?.series} tool={tool} drawings={drawings} setDrawings={setDrawings} panelId={panel.id}/>
       {!loaded&&<div className="loading">Loading cached candles…</div>}
       {loaded&&!barsRef.current.length&&status!=='connected'&&<div className="loading">No cached history. Check connection or import a CSV.</div>}
     </div>
@@ -104,6 +115,7 @@ export default function App(){
   const [markets,setMarkets]=useState(MARKET_FALLBACKS)
   const [panels,setPanels]=useState(()=>loadPanels(window.localStorage,makePanel))
   const [marketStatus,setMarketStatus]=useState('Loading markets…')
+  const [tool,setTool]=useState(null)
   const [csvMessage,setCsvMessage]=useState('')
   const fileRef=useRef(null)
   useEffect(()=>{savePanels(window.localStorage,panels)},[panels])
@@ -137,10 +149,14 @@ export default function App(){
       <button className="navbtn" onClick={addChart}>＋ Add chart</button>
       <button className="navbtn" onClick={()=>fileRef.current?.click()}>⇧ Import CSV</button>
       <input ref={fileRef} type="file" accept=".csv,text/csv" hidden onChange={importCSV}/>
+      <div className="draw-tools" aria-label="Drawing tools">
+        <button className={tool==='line'?'selected':''} title="Line: click two chart points" onClick={()=>setTool(tool==='line'?null:'line')}>Line</button>
+        <button className={tool==='box'?'selected':''} title="Box: click two opposite corners" onClick={()=>setTool(tool==='box'?null:'box')}>Box</button>
+      </div>
       <span className="status"><i className="online"/> LOCAL-FIRST</span>
     </header>
     <section className={`workspace chart-grid count-${Math.min(panels.length,4)}`}>
-      {panels.map(panel=><ChartPanel key={panel.id} panel={panel} markets={markets} onChange={updatePanel} onRemove={id=>setPanels(p=>p.length>1?p.filter(x=>x.id!==id):p)}/>)}
+      {panels.map(panel=><ChartPanel key={panel.id} panel={panel} markets={markets} onChange={updatePanel} onRemove={id=>setPanels(p=>p.length>1?p.filter(x=>x.id!==id):p)} tool={tool}/>)}
     </section>
     <footer className="bottom"><span>PURE CHART LABS · RESEARCH WORKSPACE</span><span>Public market data only · No trade execution · CSV and cached history stay in this browser</span></footer>
   </main>
