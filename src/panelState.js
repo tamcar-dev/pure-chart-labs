@@ -1,4 +1,5 @@
 export const PANELS_STORAGE_KEY = 'pcl-panels:v1'
+export const SUPPORTED_TIMEFRAMES = new Set([60, 120, 300, 600, 900, 1800, 3600, 7200, 14400, 28800, 86400])
 
 export function loadPanels(storage, makePanel) {
   try {
@@ -6,7 +7,7 @@ export function loadPanels(storage, makePanel) {
     if (Array.isArray(parsed) && parsed.length > 0) {
       const valid = parsed.filter(panel =>
         panel && typeof panel.id === 'string' && panel.id &&
-        typeof panel.symbol === 'string' && Number.isFinite(panel.tf)
+        typeof panel.symbol === 'string' && panel.symbol && SUPPORTED_TIMEFRAMES.has(panel.tf)
       ).map(({ id, symbol, tf }) => ({ id, symbol, tf }))
       if (valid.length) return valid
     }

@@ -26,9 +26,31 @@ test('falls back to one new panel when saved JSON is corrupt', () => {
   assert.equal(created, 1)
 })
 
+test('falls back to one new panel when storage is empty', () => {
+  const fallback = { id: 'new-id', symbol: 'R_75', tf: 900 }
+  assert.deepEqual(loadPanels(memoryStorage(), () => fallback), [fallback])
+})
+
+test('drops invalid entries and preserves every valid panel', () => {
+  const valid = { id: 'valid', symbol: 'R_25', tf: 300 }
+  const storage = memoryStorage({ [PANELS_STORAGE_KEY]: JSON.stringify([
+    { id: '', symbol: 'R_75', tf: 900 },
+    { id: 'bad-timeframe', symbol: 'R_75', tf: -60 },
+    { id: 'bad-type', symbol: 'R_75', tf: '900' },
+    { id: 'bad-symbol', symbol: '', tf: 900 },
+    valid,
+  ]) })
+  assert.deepEqual(loadPanels(storage, () => assert.fail('valid entries should be retained')), [valid])
+})
+
 test('saves only panel identity and chart settings for reload', () => {
   const storage = memoryStorage()
   const panels = [{ id: 'p1', symbol: 'R_50', tf: 300, refresh: 123 }]
   assert.equal(savePanels(storage, panels), true)
   assert.deepEqual(JSON.parse(storage.getItem(PANELS_STORAGE_KEY)), [{ id: 'p1', symbol: 'R_50', tf: 300 }])
+})
+
+test('reports storage quota or write failures without throwing', () => {
+  const storage = { setItem: () => { throw new Error('QuotaExceededError') } }
+  assert.equal(savePanels(storage, [{ id: 'p1', symbol: 'R_50', tf: 300 }]), false)
 })
