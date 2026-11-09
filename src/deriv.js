@@ -37,6 +37,7 @@ export function fetchActiveSymbols(timeoutMs=9000) {
 
 export function connectDeriv({symbol,granularity,onCandles,onTick,onStatus}) {
   let ws=null,stopped=false,retryTimer=null,requestId=1,subscriptionId=null,attempt=0
+  const pending=new Map()
   const send=payload=>{
     if(ws?.readyState===WebSocket.OPEN){
       const req_id=requestId++
@@ -45,16 +46,44 @@ export function connectDeriv({symbol,granularity,onCandles,onTick,onStatus}) {
     }
     return null
   }
+  const requestHistory=(end,count,subscribe=0)=>new Promise((resolve,reject)=>{
+    const req_id=send({ticks_history:symbol,count,end,style:'candles',granularity,...(subscribe?{subscribe}: {})})
+    if(req_id==null){reject(new Error('History request could not be sent'));return}
+    const timer=setTimeout(()=>{pending.delete(req_id);reject(new Error('Candle history request timed out'))},15000)
+    pending.set(req_id,{resolve,reject,timer})
+  })
   const connect=()=>{
     if(stopped||!navigator.onLine){onStatus('offline');return}
     onStatus(attempt?'reconnecting':'connecting')
     try{ws=new WebSocket(WS_URL)}catch(e){scheduleRetry();return}
-    ws.onopen=()=>{
+    ws.onopen=async()=>{
       attempt=0;onStatus('connected')
-      send({ticks_history:symbol,count:CANDLE_HISTORY_LIMIT,end:'latest',style:'candles',granularity,subscribe:1})
+      try{
+        let end='latest',loaded=0,lastOldest=Infinity
+        while(!stopped&&loaded<CANDLE_HISTORY_LIMIT){
+          const count=Math.min(1000,CANDLE_HISTORY_LIMIT-loaded)
+          const msg=await requestHistory(end,count)
+          if(msg.error)throw new Error(msg.error.message)
+          const candles=(msg.candles||[]).map(c=>({time:Number(c.epoch??c.open_time??c.time),open:Number(c.open),high:Number(c.high),low:Number(c.low),close:Number(c.close)}))
+            .filter(c=>Number.isFinite(c.time)&&[c.open,c.high,c.low,c.close].every(Number.isFinite))
+          if(!candles.length)break
+          onCandles(candles)
+          const oldest=Math.min(...candles.map(c=>c.time))
+          if(oldest>=lastOldest)break
+          lastOldest=oldest
+          loaded+=candles.length
+          end=String(Math.floor(oldest)-1)
+          if(candles.length<count)break
+        }
+        if(!stopped)await requestHistory('latest',1,1)
+      }catch(error){
+        if(!stopped)onStatus(`history error: ${error.message}`)
+      }
     }
     ws.onmessage=event=>{
       let msg;try{msg=JSON.parse(event.data)}catch{return}
+      const waiting=pending.get(msg.req_id)
+      if(waiting){clearTimeout(waiting.timer);pending.delete(msg.req_id);waiting.resolve(msg)}
       if(msg.error){onStatus(`error: ${msg.error.message}`);return}
       if(msg.subscription?.id)subscriptionId=msg.subscription.id
       if(msg.msg_type==='candles'||Array.isArray(msg.candles)){
@@ -85,6 +114,8 @@ export function connectDeriv({symbol,granularity,onCandles,onTick,onStatus}) {
   connect()
   return()=>{
     stopped=true;clearTimeout(retryTimer)
+    for(const request of pending.values()){clearTimeout(request.timer);request.reject(new Error('Connection closed'))}
+    pending.clear()
     window.removeEventListener('online',online);window.removeEventListener('offline',offline)
     if(subscriptionId)send({forget:subscriptionId})
     try{ws?.close()}catch{}
