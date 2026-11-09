@@ -3,6 +3,7 @@ import { CandlestickSeries, createChart, CrosshairMode } from 'lightweight-chart
 import { connectDeriv, fetchActiveSymbols, MARKET_FALLBACKS } from './deriv'
 import { loadCandles, saveCandles } from './db'
 import { parseCandleCSV } from './csv'
+import { loadPanels, savePanels } from './panelState'
 
 const TIMEFRAMES = [
   ['1m',60],['2m',120],['5m',300],['10m',600],['15m',900],['30m',1800],
@@ -216,10 +217,11 @@ function ChartPanel({ panel, markets, onChange, onRemove, tool, onStatus }) {
 
 export default function App(){
   const [markets,setMarkets]=useState(MARKET_FALLBACKS)
-  const [panels,setPanels]=useState([makePanel()])
+  const [panels,setPanels]=useState(()=>loadPanels(window.localStorage,makePanel))
   const [tool,setTool]=useState(null),[marketStatus,setMarketStatus]=useState('Loading markets…')
   const [csvMessage,setCsvMessage]=useState('')
   const fileRef=useRef(null)
+  useEffect(()=>{savePanels(window.localStorage,panels)},[panels])
   useEffect(()=>{
     let alive=true
     fetchActiveSymbols().then(list=>{if(alive&&list.length){setMarkets(list);setMarketStatus(`${list.length} markets available`)}})
