@@ -1,9 +1,8 @@
 {
   "name": "Pure Chart Labs",
-  "short_name": "Pure Chart",
+  "short_name": "Pure Charts",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#090d12",
-  "theme_color": "#090d12",
-  "icons": []
+  "theme_color": "#090d12"
 }

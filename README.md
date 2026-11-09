@@ -1,41 +1,49 @@
-# Pure Chart Labs — offline-first starter
+# Pure Chart Labs
 
-This is the first runnable milestone: a local-first V75 chart terminal with a dark layout, Deriv public market-data connection, timeframe selection, IndexedDB candle cache, offline shell caching, and a basic candle replay stepper.
+A local-first market research chart workspace built with React, Vite and Lightweight Charts.
 
-## Requirements
-- Node.js 20+ and npm
-- Internet for the first install and for live Deriv market data
+## Run locally
+Requires Node.js 20+ and npm.
 
-## Run on Linux
 ```bash
-unzip pure-chart-labs.zip
-cd pure-chart-labs
 npm install
 npm run dev
 ```
-Open the local URL printed by Vite (usually http://localhost:5173).
 
-## Build and run the production version
+Build and preview:
+
 ```bash
 npm run build
 npm run preview
 ```
 
-## Offline behaviour
-- Candles received from Deriv are saved in IndexedDB in this browser profile.
-- The app shell is cached by a service worker after the app is visited over localhost or HTTPS.
-- Previously saved candles remain viewable without internet.
-- Live updates and downloading unseen history require internet.
-- Use the same browser profile/device to access the local candle database.
+## Markets and data
+- The app requests Deriv's public active-symbol catalogue and filters it to synthetic/derived markets.
+- A short built-in volatility-index list is used if catalogue discovery is unavailable.
+- Each chart has its own symbol, timeframe, live market-data connection, local candle cache, replay state and drawings.
+- Market data uses Deriv's current public WebSocket endpoint; public market-data requests do not require account authentication.
+- The application does not request account credentials or execute trades.
 
-## Important first-milestone limitations
-- V75 uses Deriv symbol `R_75`.
-- This is a charting application, not a trading execution terminal; it does not place trades or request account credentials.
-- The initial version requests Deriv candle history and subscriptions for supported minute/hour/day granularities. Weekly/monthly aggregation, advanced drawing tools, indicators, full replay controls, symbol catalogue, and robust gap-repair are planned next.
-- API availability and endpoint behaviour can change; verify against Deriv's current public API documentation if the feed changes.
+## CSV import
+Use **Import CSV** to import OHLC candles into the first chart's selected market/timeframe cache. Supported formats:
+- Header-based `epoch/open/high/low/close` or `datetime/open/high/low/close`.
+- Separate `date,time,open,high,low,close` columns.
+- Comma-, semicolon- or tab-separated files.
+- UTF-8 and UTF-16LE BOM input.
+- Headerless MT-style columns `date,time,open,high,low,close,...`.
 
-## Data/API references
-- https://developers.deriv.me/docs/data/ticks-history/
-- https://developers.deriv.me/docs/data/ticks/
-- https://developers.deriv.me/docs/workflows/
-- https://tradingview.github.io/lightweight-charts/docs
+Timestamps are interpreted as Unix seconds/milliseconds or parseable date/time text. The CSV import is intentionally conservative: rows with invalid OHLC relationships are skipped.
+
+## Drawings
+Select Trend line, Horizontal line, Vertical line, Rectangle or Fibonacci, then click on a chart (once for horizontal/vertical, twice for the others). Drawings are saved locally per chart panel and have per-chart undo/redo/clear controls. Drawings are not exported into the candle CSV.
+
+## Offline
+- Downloaded/imported candles are stored in IndexedDB per symbol and timeframe.
+- The application shell and static assets are cached by the service worker after the first successful visit over HTTPS or localhost.
+- Live feeds and unseen history require internet access.
+- Local data is browser-profile-specific.
+
+## Important limitations
+- Deriv catalogue availability and symbol access depend on the public API and may change.
+- Weekly/monthly aggregation, Fibonacci tools, channels, indicators, full-featured replay, drawing selection/editing/deletion, channels, measurement, indicators, full-featured replay, and gap-repair backfill are not implemented in this release.
+- This is a repaired functional foundation, not a claim of complete TradingView parity.
