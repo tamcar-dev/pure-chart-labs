@@ -176,11 +176,11 @@ await test('drawing remains persisted after reload and is scoped to its chart an
   expect((await storedDrawings()).length === 1, 'drawing was lost after switching back')
 })
 
-await test('Box drawn on 1H remains in the 5m chart with the same time/price anchors', async () => {
+await test('Box drawn across the 1H viewport is framed and visible on 5m with the same anchors', async () => {
   await fresh()
   await card().locator('select[aria-label="Timeframe"]').selectOption('3600')
   await page.waitForFunction(() => Number(document.querySelector('.canvas-chart')?.dataset.candleCount || 0) >= 200)
-  await tool('Box').click(); await drawTwoPoints(.84,.35,.91,.65)
+  await tool('Box').click(); await drawTwoPoints(.30,.35,.65,.65)
   const blueHandlePixels = () => canvas().evaluate((el) => {
     const { data } = el.getContext('2d').getImageData(0, 0, el.width, el.height)
     let count = 0

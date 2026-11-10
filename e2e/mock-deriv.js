@@ -8,9 +8,10 @@ export async function fetchActiveSymbols() { return MARKET_FALLBACKS }
 
 export function connectDeriv({ symbol, granularity, onCandles, onStatus }) {
   let stopped = false
+  const count = 2000
   const latest = Math.floor(Date.now() / 1000 / granularity) * granularity
-  const candles = Array.from({ length: 300 }, (_, index) => {
-    const time = latest - (299 - index) * granularity
+  const candles = Array.from({ length: count }, (_, index) => {
+    const time = latest - (count - 1 - index) * granularity
     const open = 100 + Math.sin(index / 9) * 4
     const close = 100 + Math.sin((index + 1) / 9) * 4
     return {

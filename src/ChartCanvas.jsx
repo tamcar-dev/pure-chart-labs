@@ -90,6 +90,8 @@ const ChartCanvas = forwardRef(function ChartCanvas(
   const priceDragRef = useRef(null);
   const drawDragRef = useRef(null);
   const prevLenRef = useRef(0);
+  const previousTimeframeRef = useRef(timeframeLabel);
+  const pendingTimeframeRef = useRef(null);
   const lastTapRef = useRef(null);
 
   useImperativeHandle(ref, () => ({
@@ -127,6 +129,17 @@ const ChartCanvas = forwardRef(function ChartCanvas(
     scheduleDraw();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [candles]);
+
+  useEffect(() => {
+    if (previousTimeframeRef.current !== timeframeLabel) {
+      previousTimeframeRef.current = timeframeLabel;
+      pendingTimeframeRef.current = { candles };
+    }
+    const pending = pendingTimeframeRef.current;
+    if (!pending || !candles.length || candles === pending.candles) return;
+    pendingTimeframeRef.current = null;
+    frameLatestDrawingIntoView();
+  }, [timeframeLabel, candles, drawings]);
 
   useEffect(() => {
     drawInProgressRef.current = null;
@@ -313,6 +326,42 @@ const ChartCanvas = forwardRef(function ChartCanvas(
 
   function xOfTimestamp(ts) {
     return xOfIndex(indexAtTimestamp(ts));
+  }
+
+  function frameLatestDrawingIntoView() {
+    const available = (drawingsRef.current || []).filter(d => !d.hidden && d.points?.length);
+    if (!candlesRef.current.length || !available.length) return;
+    const drawing = available.find(d => d.id === selectedIdRef.current) || available[available.length - 1];
+    const points = drawing.points.filter(p => Number.isFinite(p?.timestamp) && Number.isFinite(p?.price));
+    if (!points.length) return;
+
+    const indices = points.map(p => indexAtTimestamp(p.timestamp));
+    const leftIndex = Math.min(...indices), rightIndex = Math.max(...indices);
+    const visible = visibleRange();
+    if (leftIndex < visible.left || rightIndex > visible.right) {
+      const a = area();
+      if (a.w > 0) {
+        const span = rightIndex - leftIndex;
+        const margin = Math.max(12, span * 0.08);
+        const fitWidth = a.w / Math.max(1, span + margin * 2);
+        if (fitWidth < viewRef.current.barWidth) {
+          viewRef.current.barWidth = Math.max(MIN_BAR_WIDTH, fitWidth);
+        }
+        const visibleBars = a.w / viewRef.current.barWidth;
+        viewRef.current.rightIndex = (leftIndex + rightIndex) / 2 + visibleBars / 2 - 0.5;
+      }
+    }
+
+    const range = visiblePriceRange();
+    const low = Math.min(range.lo, ...points.map(p => p.price));
+    const high = Math.max(range.hi, ...points.map(p => p.price));
+    const currentSpan = range.hi - range.lo;
+    if (currentSpan > 0 && (low < range.lo || high > range.hi)) {
+      const targetSpan = high - low;
+      viewRef.current.priceShift += (low + high - range.lo - range.hi) / 2;
+      viewRef.current.priceZoom *= Math.max(1, (targetSpan / currentSpan) * 1.1);
+    }
+    scheduleDraw();
   }
 
   function timestampAtX(x) {
