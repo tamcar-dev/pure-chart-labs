@@ -23,6 +23,7 @@ npm run preview
 - The app requests Deriv's public active-symbol catalogue and lists all returned active symbols, grouped by market and submarket (including forex, indices, commodities, cryptocurrency, and synthetic indices).
 - A short built-in volatility-index list is used if catalogue discovery is unavailable.
 - Each chart has its own symbol, timeframe, live market-data connection, local candle cache, replay state, and drawings.
+- Price axes and OHLC readouts use Deriv's per-symbol pip size to retain the quote precision; source candle values are not rounded.
 - Historical loading pages backward in requests of up to 1,000 candles, targeting 10,000 candles per chart when Deriv has that much history available.
 - Market data uses Deriv's public WebSocket endpoint; public market-data requests do not require account authentication.
 - The application does not request account credentials or execute trades.

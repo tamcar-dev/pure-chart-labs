@@ -84,7 +84,9 @@ function ChartPanel({ panel, markets, onChange, onRemove, tool, onDrawingCreated
     if (store?.key === ctxKey) writeDrawings(ctxKey, store.history.present)
   }, [store, ctxKey])
 
-  const label = markets.find((m) => m.symbol === panel.symbol)?.display_name || panel.symbol
+  const selectedMarket = markets.find((m) => m.symbol === panel.symbol)
+  const label = selectedMarket?.display_name || panel.symbol
+  const priceDecimals = selectedMarket?.decimals ?? null
   const timeframe = TIMEFRAMES.find((x) => x[1] === panel.tf)?.[0] || `${panel.tf}s`
   const activeTool = tool === 'trend' ? 'trendline' : tool === 'rectangle' ? 'rectangle' : 'cursor'
   const marketGroups = useMemo(() => {
@@ -264,7 +266,7 @@ function ChartPanel({ panel, markets, onChange, onRemove, tool, onDrawingCreated
         {TIMEFRAMES.map(([name,seconds])=><option key={seconds} value={seconds}>{name}</option>)}
       </select>
       <span className={`mini-status ${status==='connected'?'ok':''}`}>{status.toUpperCase()}</span>
-      <span className="head-price">{price==null?'—':price.toLocaleString(undefined,{maximumFractionDigits:5})}</span>
+      <span className="head-price">{price==null?'—':price.toLocaleString(undefined,{minimumFractionDigits:priceDecimals??0,maximumFractionDigits:priceDecimals??5})}</span>
       <button className="tiny-btn" onClick={()=>canvasRef.current?.goToLatest()} title="Go to latest candle">Fit</button>
       <button className="tiny-btn" onClick={mode==='REPLAY'?exit:replay}>{mode==='REPLAY'?'Exit':'Replay'}</button>
       {mode==='REPLAY'&&<button className="tiny-btn" onClick={step}>Step</button>}
@@ -280,7 +282,7 @@ function ChartPanel({ panel, markets, onChange, onRemove, tool, onDrawingCreated
         theme={CANVAS_THEME}
         symbol={label}
         timeframeLabel={timeframe}
-        decimals={null}
+        decimals={priceDecimals}
         gridVisible={true}
         formingIndex={visibleFormingIndex}
         emptyMessage={!loaded ? 'Loading candles…' : status !== 'connected' ? 'No cached history. Check connection or import a CSV.' : 'Waiting for Deriv market data…'}

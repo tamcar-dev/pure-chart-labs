@@ -1,17 +1,25 @@
 const WS_URL = 'wss://api.derivws.com/trading/v1/options/ws/public'
 export const CANDLE_HISTORY_LIMIT = 10000
 
+export function decimalsFromPipSize(pipSize) {
+  const value = Number(pipSize)
+  if (!Number.isFinite(value) || value <= 0) return null
+  const [mantissa, exponent = '0'] = value.toString().toLowerCase().split('e')
+  const decimals = (mantissa.split('.')[1] || '').length - Number(exponent)
+  return Math.max(0, Math.min(12, decimals))
+}
+
 export const MARKET_FALLBACKS = [
-  {symbol:'R_10',display_name:'Volatility 10 Index',group:'Synthetic Index · Random Index'},
-  {symbol:'R_25',display_name:'Volatility 25 Index',group:'Synthetic Index · Random Index'},
-  {symbol:'R_50',display_name:'Volatility 50 Index',group:'Synthetic Index · Random Index'},
-  {symbol:'R_75',display_name:'Volatility 75 Index',group:'Synthetic Index · Random Index'},
-  {symbol:'R_100',display_name:'Volatility 100 Index',group:'Synthetic Index · Random Index'},
-  {symbol:'1HZ10V',display_name:'Volatility 10 (1s) Index',group:'Synthetic Index · Random Index'},
-  {symbol:'1HZ25V',display_name:'Volatility 25 (1s) Index',group:'Synthetic Index · Random Index'},
-  {symbol:'1HZ50V',display_name:'Volatility 50 (1s) Index',group:'Synthetic Index · Random Index'},
-  {symbol:'1HZ75V',display_name:'Volatility 75 (1s) Index',group:'Synthetic Index · Random Index'},
-  {symbol:'1HZ100V',display_name:'Volatility 100 (1s) Index',group:'Synthetic Index · Random Index'}
+  {symbol:'R_10',display_name:'Volatility 10 Index',group:'Synthetic Index · Random Index',decimals:3},
+  {symbol:'R_25',display_name:'Volatility 25 Index',group:'Synthetic Index · Random Index',decimals:3},
+  {symbol:'R_50',display_name:'Volatility 50 Index',group:'Synthetic Index · Random Index',decimals:4},
+  {symbol:'R_75',display_name:'Volatility 75 Index',group:'Synthetic Index · Random Index',decimals:4},
+  {symbol:'R_100',display_name:'Volatility 100 Index',group:'Synthetic Index · Random Index',decimals:2},
+  {symbol:'1HZ10V',display_name:'Volatility 10 (1s) Index',group:'Synthetic Index · Random Index',decimals:2},
+  {symbol:'1HZ25V',display_name:'Volatility 25 (1s) Index',group:'Synthetic Index · Random Index',decimals:2},
+  {symbol:'1HZ50V',display_name:'Volatility 50 (1s) Index',group:'Synthetic Index · Random Index',decimals:2},
+  {symbol:'1HZ75V',display_name:'Volatility 75 (1s) Index',group:'Synthetic Index · Random Index',decimals:2},
+  {symbol:'1HZ100V',display_name:'Volatility 100 (1s) Index',group:'Synthetic Index · Random Index',decimals:2}
 ]
 
 function categoryLabel(value) {
@@ -31,9 +39,16 @@ export function normalizeActiveSymbols(activeSymbols) {
     const display_name = String(item.underlying_symbol_name || item.display_name || symbol).trim()
     const market = item.market_display_name || categoryLabel(item.market)
     const submarket = item.submarket_display_name || categoryLabel(item.submarket) || categoryLabel(item.subgroup)
-    const normalized = {symbol, display_name, group:[market, submarket].filter(Boolean).join(' · ') || 'Other Markets'}
+    const decimals = decimalsFromPipSize(item.pip_size)
+    const normalized = {symbol, display_name, group:[market, submarket].filter(Boolean).join(' · ') || 'Other Markets', ...(decimals == null ? {} : {decimals})}
     const previous = bySymbol.get(symbol)
-    if (!previous || (previous.display_name === symbol && display_name !== symbol)) bySymbol.set(symbol, normalized)
+    if (!previous) bySymbol.set(symbol, normalized)
+    else bySymbol.set(symbol, {
+      ...previous,
+      ...(previous.display_name === symbol && display_name !== symbol ? {display_name} : {}),
+      ...(previous.group === 'Other Markets' && normalized.group !== 'Other Markets' ? {group:normalized.group} : {}),
+      ...(previous.decimals == null && decimals != null ? {decimals} : {}),
+    })
   }
   return [...bySymbol.values()].sort((a,b)=>a.group.localeCompare(b.group)||a.display_name.localeCompare(b.display_name)||a.symbol.localeCompare(b.symbol))
 }

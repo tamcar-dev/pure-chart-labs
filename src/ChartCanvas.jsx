@@ -1300,6 +1300,7 @@ const ChartCanvas = forwardRef(function ChartCanvas(
       ref={wrapRef}
       className="canvas-chart"
       data-candle-count={candles?.length || 0}
+      data-price-decimals={decimals ?? ''}
       data-drawing-count={drawings?.length || 0}
       data-selected-drawing={selectedId || ''}
       tabIndex={0}

@@ -67,6 +67,13 @@ await test('market picker includes non-synthetic Deriv symbols grouped by catego
   expect(group.startsWith('Forex · Major Pairs'), 'forex pair was not grouped under its market category')
   expect(await select.locator('option[value="frxXAUUSD"]').count() === 1, 'commodity symbol is missing from the picker')
   expect(await select.locator('option[value="R_75"]').count() === 1, 'synthetic symbol disappeared from the picker')
+  const chart = card().locator('.canvas-chart')
+  await page.waitForFunction(() => document.querySelector('.canvas-chart')?.dataset.priceDecimals === '4')
+  await select.selectOption('frxEURUSD')
+  await page.waitForFunction(() => document.querySelector('.canvas-chart')?.dataset.priceDecimals === '5')
+  await select.selectOption('frxUSDJPY')
+  await page.waitForFunction(() => document.querySelector('.canvas-chart')?.dataset.priceDecimals === '3')
+  expect(await chart.getAttribute('data-price-decimals') === '3', 'selected symbol precision was not passed to the chart')
 })
 
 await test('Line tool creates a time/price anchored line and persists it', async () => {
