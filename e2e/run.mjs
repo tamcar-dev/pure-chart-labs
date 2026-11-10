@@ -58,6 +58,17 @@ await test('canvas renders the fetched candle history and navigation controls', 
   expect(await card().locator('.canvas-chart__nav-button').count() === 4, 'zoom/history controls are missing')
 })
 
+await test('market picker includes non-synthetic Deriv symbols grouped by category', async () => {
+  await fresh()
+  const select = card().locator('select[aria-label="Market"]')
+  await page.waitForFunction(() => !!document.querySelector('select[aria-label="Market"] option[value="frxEURUSD"]'))
+  const forex = select.locator('option[value="frxEURUSD"]')
+  const group = await forex.evaluate((option) => option.parentElement.label)
+  expect(group.startsWith('Forex · Major Pairs'), 'forex pair was not grouped under its market category')
+  expect(await select.locator('option[value="frxXAUUSD"]').count() === 1, 'commodity symbol is missing from the picker')
+  expect(await select.locator('option[value="R_75"]').count() === 1, 'synthetic symbol disappeared from the picker')
+})
+
 await test('Line tool creates a time/price anchored line and persists it', async () => {
   await fresh(); await tool('Line').click(); await drawTwoPoints()
   const drawings = await storedDrawings()

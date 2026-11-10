@@ -87,6 +87,15 @@ function ChartPanel({ panel, markets, onChange, onRemove, tool, onDrawingCreated
   const label = markets.find((m) => m.symbol === panel.symbol)?.display_name || panel.symbol
   const timeframe = TIMEFRAMES.find((x) => x[1] === panel.tf)?.[0] || `${panel.tf}s`
   const activeTool = tool === 'trend' ? 'trendline' : tool === 'rectangle' ? 'rectangle' : 'cursor'
+  const marketGroups = useMemo(() => {
+    const groups = new Map()
+    for (const market of markets) {
+      const group = market.group || 'Other Markets'
+      if (!groups.has(group)) groups.set(group, [])
+      groups.get(group).push(market)
+    }
+    return [...groups.entries()]
+  }, [markets])
 
   // Existing Deriv data and IndexedDB cache are kept intact; only the canvas adapter converts epoch seconds to ms.
   useEffect(() => {
@@ -246,7 +255,10 @@ function ChartPanel({ panel, markets, onChange, onRemove, tool, onDrawingCreated
   return <article className="chart-card">
     <div className="chart-card-head">
       <select aria-label="Market" value={panel.symbol} onChange={(e)=>onChange({...panel,symbol:e.target.value})}>
-        {markets.map((market)=><option key={market.symbol} value={market.symbol}>{market.display_name} · {market.symbol}</option>)}
+        {!markets.some((market)=>market.symbol===panel.symbol)&&<option value={panel.symbol}>{panel.symbol} (not in active catalogue)</option>}
+        {marketGroups.map(([group,items])=><optgroup key={group} label={`${group} (${items.length})`}>
+          {items.map((market)=><option key={market.symbol} value={market.symbol}>{market.display_name} · {market.symbol}</option>)}
+        </optgroup>)}
       </select>
       <select aria-label="Timeframe" value={panel.tf} onChange={(e)=>onChange({...panel,tf:Number(e.target.value)})}>
         {TIMEFRAMES.map(([name,seconds])=><option key={seconds} value={seconds}>{name}</option>)}
@@ -301,7 +313,7 @@ export default function App(){
   useEffect(()=>{ savePanels(getBrowserStorage(), panels) },[panels])
   useEffect(()=>{
     let alive=true
-    fetchActiveSymbols().then((list)=>{if(alive&&list.length){setMarkets(list);setMarketStatus(`${list.length} markets available`)}})
+    fetchActiveSymbols().then((list)=>{if(alive&&list.length){setMarkets(list);setMarketStatus(`${list.length} active symbols available`)}})
       .catch(()=>{if(alive)setMarketStatus('Using built-in market list')})
     return()=>{alive=false}
   },[])

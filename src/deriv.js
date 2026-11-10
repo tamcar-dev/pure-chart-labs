@@ -2,17 +2,41 @@ const WS_URL = 'wss://api.derivws.com/trading/v1/options/ws/public'
 export const CANDLE_HISTORY_LIMIT = 10000
 
 export const MARKET_FALLBACKS = [
-  {symbol:'R_10',display_name:'Volatility 10 Index'},
-  {symbol:'R_25',display_name:'Volatility 25 Index'},
-  {symbol:'R_50',display_name:'Volatility 50 Index'},
-  {symbol:'R_75',display_name:'Volatility 75 Index'},
-  {symbol:'R_100',display_name:'Volatility 100 Index'},
-  {symbol:'1HZ10V',display_name:'Volatility 10 (1s) Index'},
-  {symbol:'1HZ25V',display_name:'Volatility 25 (1s) Index'},
-  {symbol:'1HZ50V',display_name:'Volatility 50 (1s) Index'},
-  {symbol:'1HZ75V',display_name:'Volatility 75 (1s) Index'},
-  {symbol:'1HZ100V',display_name:'Volatility 100 (1s) Index'}
+  {symbol:'R_10',display_name:'Volatility 10 Index',group:'Synthetic Index · Random Index'},
+  {symbol:'R_25',display_name:'Volatility 25 Index',group:'Synthetic Index · Random Index'},
+  {symbol:'R_50',display_name:'Volatility 50 Index',group:'Synthetic Index · Random Index'},
+  {symbol:'R_75',display_name:'Volatility 75 Index',group:'Synthetic Index · Random Index'},
+  {symbol:'R_100',display_name:'Volatility 100 Index',group:'Synthetic Index · Random Index'},
+  {symbol:'1HZ10V',display_name:'Volatility 10 (1s) Index',group:'Synthetic Index · Random Index'},
+  {symbol:'1HZ25V',display_name:'Volatility 25 (1s) Index',group:'Synthetic Index · Random Index'},
+  {symbol:'1HZ50V',display_name:'Volatility 50 (1s) Index',group:'Synthetic Index · Random Index'},
+  {symbol:'1HZ75V',display_name:'Volatility 75 (1s) Index',group:'Synthetic Index · Random Index'},
+  {symbol:'1HZ100V',display_name:'Volatility 100 (1s) Index',group:'Synthetic Index · Random Index'}
 ]
+
+function categoryLabel(value) {
+  if (!value) return ''
+  return String(value).replace(/_/g, ' ').split(' ').map((word) => {
+    if (word.toLowerCase() === 'otc') return 'OTC'
+    return word ? word[0].toUpperCase() + word.slice(1) : word
+  }).join(' ')
+}
+
+export function normalizeActiveSymbols(activeSymbols) {
+  if (!Array.isArray(activeSymbols)) return []
+  const bySymbol = new Map()
+  for (const item of activeSymbols) {
+    const symbol = String(item?.underlying_symbol || item?.symbol || '').trim()
+    if (!symbol) continue
+    const display_name = String(item.underlying_symbol_name || item.display_name || symbol).trim()
+    const market = item.market_display_name || categoryLabel(item.market)
+    const submarket = item.submarket_display_name || categoryLabel(item.submarket) || categoryLabel(item.subgroup)
+    const normalized = {symbol, display_name, group:[market, submarket].filter(Boolean).join(' · ') || 'Other Markets'}
+    const previous = bySymbol.get(symbol)
+    if (!previous || (previous.display_name === symbol && display_name !== symbol)) bySymbol.set(symbol, normalized)
+  }
+  return [...bySymbol.values()].sort((a,b)=>a.group.localeCompare(b.group)||a.display_name.localeCompare(b.display_name)||a.symbol.localeCompare(b.symbol))
+}
 
 export function fetchActiveSymbols(timeoutMs=9000) {
   return new Promise((resolve,reject)=>{
@@ -25,9 +49,7 @@ export function fetchActiveSymbols(timeoutMs=9000) {
       let msg;try{msg=JSON.parse(e.data)}catch{return}
       if(msg.error){finish(new Error(msg.error.message));return}
       if(msg.msg_type==='active_symbols'&&Array.isArray(msg.active_symbols)){
-        const list=msg.active_symbols.filter(x=>x.symbol&&/synthetic|derived/i.test(`${x.market||''} ${x.market_display_name||''} ${x.submarket||''}`))
-          .map(x=>({symbol:x.symbol,display_name:x.display_name||x.symbol}))
-          .sort((a,b)=>a.display_name.localeCompare(b.display_name))
+        const list=normalizeActiveSymbols(msg.active_symbols)
         finish(null,list.length?list:MARKET_FALLBACKS)
       }
     }

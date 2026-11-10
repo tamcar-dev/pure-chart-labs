@@ -1,7 +1,10 @@
 export const CANDLE_HISTORY_LIMIT = 10000
 export const MARKET_FALLBACKS = [
-  { symbol: 'R_75', display_name: 'Volatility 75 Index' },
-  { symbol: 'R_10', display_name: 'Volatility 10 Index' },
+  { symbol: 'R_75', display_name: 'Volatility 75 Index', group: 'Synthetic Index · Random Index' },
+  { symbol: 'R_10', display_name: 'Volatility 10 Index', group: 'Synthetic Index · Random Index' },
+  { symbol: 'frxEURUSD', display_name: 'EUR/USD', group: 'Forex · Major Pairs' },
+  { symbol: 'frxGBPUSD', display_name: 'GBP/USD', group: 'Forex · Major Pairs' },
+  { symbol: 'frxXAUUSD', display_name: 'Gold/USD', group: 'Commodities · Metals' },
 ]
 
 export async function fetchActiveSymbols() { return MARKET_FALLBACKS }

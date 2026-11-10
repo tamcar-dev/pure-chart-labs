@@ -20,7 +20,7 @@ npm run preview
 
 ## Markets and data
 
-- The app requests Deriv's public active-symbol catalogue and filters it to synthetic/derived markets.
+- The app requests Deriv's public active-symbol catalogue and lists all returned active symbols, grouped by market and submarket (including forex, indices, commodities, cryptocurrency, and synthetic indices).
 - A short built-in volatility-index list is used if catalogue discovery is unavailable.
 - Each chart has its own symbol, timeframe, live market-data connection, local candle cache, replay state, and drawings.
 - Historical loading pages backward in requests of up to 1,000 candles, targeting 10,000 candles per chart when Deriv has that much history available.
