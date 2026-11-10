@@ -17,13 +17,27 @@ const CANVAS_THEME = {
   bull: '#26a69a', bear: '#ef5350', crosshair: '#526174'
 }
 
-function readDrawings(key, legacyKey) {
+function readDrawings(key, panelId, symbol) {
   try {
-    const current = localStorage.getItem(key)
-    if (current !== null) return parseStoredDrawings(current)
-    const legacy = legacyKey ? localStorage.getItem(legacyKey) : null
-    const items = parseStoredDrawings(legacy)
-    if (items.length && writeDrawings(key, items)) localStorage.removeItem(legacyKey)
+    const storage = localStorage
+    const merged = new Map(parseStoredDrawings(storage.getItem(key)).map((drawing) => [drawing.id, drawing]))
+    const legacyPrefix = `pcl-drawings:v2:${panelId}:${symbol}:`
+    const legacyKeys = []
+    for (let i = 0; i < storage.length; i++) {
+      const storedKey = storage.key(i)
+      if (storedKey?.startsWith(legacyPrefix)) legacyKeys.push(storedKey)
+    }
+    const panelLegacyKey = `pcl-drawings:${panelId}`
+    if (storage.getItem(panelLegacyKey) !== null) legacyKeys.push(panelLegacyKey)
+    if (!legacyKeys.length) return [...merged.values()]
+
+    for (const legacyKey of legacyKeys.sort()) {
+      for (const drawing of parseStoredDrawings(storage.getItem(legacyKey))) {
+        if (!merged.has(drawing.id)) merged.set(drawing.id, drawing)
+      }
+    }
+    const items = [...merged.values()]
+    if (writeDrawings(key, items)) legacyKeys.forEach((legacyKey) => storage.removeItem(legacyKey))
     return items
   } catch { return [] }
 }
@@ -49,21 +63,20 @@ function ChartPanel({ panel, markets, onChange, onRemove, tool, onDrawingCreated
   const [store,setStore] = useState(null)
   const editBaseRef = useRef(null)
 
-  // Drawings are isolated per chart, market and timeframe and remain time/price anchored.
-  const ctxKey = drawingsStorageKey(panel.id, panel.symbol, panel.tf)
-  const legacyKey = `pcl-drawings:${panel.id}`
+  // Drawings are shared across timeframes for this chart and market, anchored to time/price.
+  const ctxKey = drawingsStorageKey(panel.id, panel.symbol)
+  const drawContextRef = useRef({ panelId: panel.id, symbol: panel.symbol })
+  drawContextRef.current = { panelId: panel.id, symbol: panel.symbol }
   const keyRef = useRef(ctxKey)
-  const legacyKeyRef = useRef(legacyKey)
   keyRef.current = ctxKey
-  legacyKeyRef.current = legacyKey
   const view = store?.key === ctxKey
     ? store
-    : { key: ctxKey, history: createHistory(readDrawings(ctxKey, legacyKey)), selectedId: null }
+    : { key: ctxKey, history: createHistory(readDrawings(ctxKey, panel.id, panel.symbol)), selectedId: null }
   const updateView = (fn) => setStore((current) => {
     const key = keyRef.current
     const base = current?.key === key
       ? current
-      : { key, history: createHistory(readDrawings(key, legacyKeyRef.current)), selectedId: null }
+      : { key, history: createHistory(readDrawings(key, drawContextRef.current.panelId, drawContextRef.current.symbol)), selectedId: null }
     return { ...base, ...fn(base) }
   })
 

@@ -35,7 +35,7 @@ Timestamps are interpreted as Unix seconds/milliseconds or parseable date/time t
 
 ## Drawings
 
-The workspace exposes only **Line** and **Box**. Select a tool and either click two chart points or drag to place it. Use **Cursor** to select a drawing; drag a line endpoint or a box edge to edit, and press Delete/Backspace to remove the selected drawing. Ctrl/Cmd+Z and Ctrl/Cmd+Shift+Z undo/redo, including drawing edits; per-chart controls also provide undo, redo, and clear. Drawings are anchored to time/price and stored locally per panel, market, and timeframe.
+The workspace exposes only **Line** and **Box**. Select a tool and either click two chart points or drag to place it. Use **Cursor** to select a drawing; drag a line endpoint or a box edge to edit, and press Delete/Backspace to remove the selected drawing. Ctrl/Cmd+Z and Ctrl/Cmd+Shift+Z undo/redo, including drawing edits; per-chart controls also provide undo, redo, and clear. Drawings are anchored to time/price and stored locally per chart panel and market, so they remain available when switching timeframes. Existing timeframe-specific drawings are migrated into the shared chart/market set.
 
 The chart renderer and drawing interactions are custom implementations. They are not TradingView's proprietary Charting Library and do not claim full TradingView parity.
 

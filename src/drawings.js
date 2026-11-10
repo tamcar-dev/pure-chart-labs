@@ -16,8 +16,8 @@ export function makePoint(time, price) {
   return isValidPoint({ time, price }) ? { time: Number(time), price: Number(price) } : null
 }
 
-export function drawingsStorageKey(panelId, symbol, tf) {
-  return `pcl-drawings:v2:${panelId}:${symbol}:${tf}`
+export function drawingsStorageKey(panelId, symbol) {
+  return `pcl-drawings:v3:${panelId}:${symbol}`
 }
 
 export function parseStoredDrawings(raw) {

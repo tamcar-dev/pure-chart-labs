@@ -127,9 +127,9 @@ test('parseStoredDrawings migrates the earlier Line and Box names', () => {
   assert.deepEqual(parseStoredDrawings(raw).map(d => d.type), ['trend', 'rectangle'])
 })
 
-test('drawings storage key is scoped by panel, market and timeframe', () => {
+test('drawings storage key is shared across timeframes but isolated by panel and market', () => {
   const a = drawingsStorageKey('p1', 'R_75', 900)
-  assert.notEqual(a, drawingsStorageKey('p1', 'R_75', 60))
+  assert.equal(a, drawingsStorageKey('p1', 'R_75', 60))
   assert.notEqual(a, drawingsStorageKey('p1', 'R_10', 900))
   assert.notEqual(a, drawingsStorageKey('p2', 'R_75', 900))
 })

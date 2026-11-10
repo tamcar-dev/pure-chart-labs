@@ -34,7 +34,7 @@ const chartBox = async (i = 0) => canvas(i).boundingBox()
 const at = async (fx, fy, i = 0) => { const b = await chartBox(i); return { x: b.x + b.width * fx, y: b.y + b.height * fy } }
 const tool = (name) => page.locator(`.toolstrip button[title="${name}"]`)
 const storedDrawings = async () => page.evaluate(() => {
-  const entry = Object.entries(localStorage).find(([key]) => key.startsWith('pcl-drawings:v2:'))
+  const entry = Object.entries(localStorage).find(([key]) => key.startsWith('pcl-drawings:v3:'))
   return entry ? JSON.parse(entry[1]) : []
 })
 const clickAt = (point) => page.mouse.click(point.x, point.y)
@@ -42,7 +42,7 @@ async function drawTwoPoints(fx1 = .3, fy1 = .35, fx2 = .65, fy2 = .65, i = 0) {
   await clickAt(await at(fx1, fy1, i))
   await clickAt(await at(fx2, fy2, i))
   await page.waitForFunction(() => {
-    const entry = Object.entries(localStorage).find(([key]) => key.startsWith('pcl-drawings:v2:'))
+    const entry = Object.entries(localStorage).find(([key]) => key.startsWith('pcl-drawings:v3:'))
     return entry && JSON.parse(entry[1]).length > 0
   })
 }
@@ -77,7 +77,7 @@ await test('Box can also be placed with a drag gesture', async () => {
   await page.mouse.move(a.x,a.y); await page.mouse.down()
   await page.mouse.move(b.x,b.y,{steps:8}); await page.mouse.up()
   await page.waitForFunction(() => {
-    const entry = Object.entries(localStorage).find(([key]) => key.startsWith('pcl-drawings:v2:'))
+    const entry = Object.entries(localStorage).find(([key]) => key.startsWith('pcl-drawings:v3:'))
     return entry && JSON.parse(entry[1]).length === 1
   })
   expect((await storedDrawings())[0].type === 'rectangle', 'drag-to-draw did not create a rectangle')
@@ -106,17 +106,17 @@ await test('selected drawing can be deleted; undo and redo restore it', async ()
   expect(!!await card().locator('.canvas-chart').getAttribute('data-selected-drawing'), 'canvas did not select the line at its first endpoint')
   await page.keyboard.press('Delete')
   await page.waitForFunction(() => {
-    const entry = Object.entries(localStorage).find(([key]) => key.startsWith('pcl-drawings:v2:'))
+    const entry = Object.entries(localStorage).find(([key]) => key.startsWith('pcl-drawings:v3:'))
     return entry && JSON.parse(entry[1]).length === 0
   })
   await page.keyboard.press('Control+z')
   await page.waitForFunction(() => {
-    const entry = Object.entries(localStorage).find(([key]) => key.startsWith('pcl-drawings:v2:'))
+    const entry = Object.entries(localStorage).find(([key]) => key.startsWith('pcl-drawings:v3:'))
     return entry && JSON.parse(entry[1]).length === 1
   })
   await page.keyboard.press('Control+Shift+z')
   await page.waitForFunction(() => {
-    const entry = Object.entries(localStorage).find(([key]) => key.startsWith('pcl-drawings:v2:'))
+    const entry = Object.entries(localStorage).find(([key]) => key.startsWith('pcl-drawings:v3:'))
     return entry && JSON.parse(entry[1]).length === 0
   })
 })
@@ -128,7 +128,7 @@ await test('line endpoint drag updates its saved time/price anchor', async () =>
   await page.mouse.move(start.x,start.y); await page.mouse.down()
   await page.mouse.move(end.x,end.y,{steps:8}); await page.mouse.up()
   await page.waitForFunction((original) => {
-    const entry = Object.entries(localStorage).find(([key]) => key.startsWith('pcl-drawings:v2:'))
+    const entry = Object.entries(localStorage).find(([key]) => key.startsWith('pcl-drawings:v3:'))
     if (!entry) return false
     const drawing = JSON.parse(entry[1])[0]
     return drawing && (drawing.a.time !== original.time || drawing.a.price !== original.price)
@@ -136,7 +136,7 @@ await test('line endpoint drag updates its saved time/price anchor', async () =>
   expect((await storedDrawings())[0].a.time !== before.time, 'dragged anchor timestamp did not change')
   await page.keyboard.press('Control+z')
   await page.waitForFunction((original) => {
-    const entry = Object.entries(localStorage).find(([key]) => key.startsWith('pcl-drawings:v2:'))
+    const entry = Object.entries(localStorage).find(([key]) => key.startsWith('pcl-drawings:v3:'))
     if (!entry) return false
     const drawing = JSON.parse(entry[1])[0]
     return drawing && drawing.a.time === original.time && drawing.a.price === original.price
@@ -150,30 +150,82 @@ await test('rectangle edge drag resizes one side and is undoable', async () => {
   await page.mouse.move(edge.x,edge.y); await page.mouse.down()
   await page.mouse.move(target.x,target.y,{steps:8}); await page.mouse.up()
   await page.waitForFunction((original) => {
-    const entry = Object.entries(localStorage).find(([key]) => key.startsWith('pcl-drawings:v2:'))
+    const entry = Object.entries(localStorage).find(([key]) => key.startsWith('pcl-drawings:v3:'))
     if (!entry) return false
     const drawing = JSON.parse(entry[1])[0]
     return drawing && (drawing.a.price !== original.a.price || drawing.b.price !== original.b.price)
   }, before)
   await page.keyboard.press('Control+z')
   await page.waitForFunction((original) => {
-    const entry = Object.entries(localStorage).find(([key]) => key.startsWith('pcl-drawings:v2:'))
+    const entry = Object.entries(localStorage).find(([key]) => key.startsWith('pcl-drawings:v3:'))
     if (!entry) return false
     const drawing = JSON.parse(entry[1])[0]
     return drawing && drawing.a.price === original.a.price && drawing.b.price === original.b.price
   }, before)
 })
 
-await test('drawing remains persisted after reload and is scoped to its chart/timeframe', async () => {
+await test('drawing remains persisted after reload and is scoped to its chart and market', async () => {
   await fresh(); await tool('Line').click(); await drawTwoPoints()
   await page.reload()
   await page.waitForSelector('.canvas-chart__surface')
   await page.waitForFunction(() => Number(document.querySelector('.canvas-chart')?.dataset.candleCount || 0) >= 200)
   expect((await storedDrawings()).length === 1, 'drawing did not survive reload')
   await card().locator('select[aria-label="Timeframe"]').selectOption('60')
-  expect((await storedDrawings()).length === 1, 'switching timeframe overwrote stored context')
+  expect((await storedDrawings()).length === 1, 'switching timeframe hid the saved drawing')
   await card().locator('select[aria-label="Timeframe"]').selectOption('900')
-  expect((await storedDrawings()).length === 1, 'drawing was lost after returning to its original timeframe')
+  expect((await storedDrawings()).length === 1, 'drawing was lost after switching back')
+})
+
+await test('Box drawn on 1H remains in the 5m chart with the same time/price anchors', async () => {
+  await fresh()
+  await card().locator('select[aria-label="Timeframe"]').selectOption('3600')
+  await page.waitForFunction(() => Number(document.querySelector('.canvas-chart')?.dataset.candleCount || 0) >= 200)
+  await tool('Box').click(); await drawTwoPoints(.84,.35,.91,.65)
+  const blueHandlePixels = () => canvas().evaluate((el) => {
+    const { data } = el.getContext('2d').getImageData(0, 0, el.width, el.height)
+    let count = 0
+    for (let i = 0; i < data.length; i += 4) {
+      if (data[i] > 55 && data[i] < 100 && data[i + 1] > 130 && data[i + 1] < 190 && data[i + 2] > 220 && data[i + 3] > 0) count++
+    }
+    return count
+  })
+  const before = (await storedDrawings())[0]
+  expect(before.type === 'rectangle', 'expected a saved Box on 1H')
+  const sharedKey = await page.evaluate(() => Object.keys(localStorage).find((key) => key.startsWith('pcl-drawings:v3:')))
+  expect(await card().locator('.canvas-chart').getAttribute('data-drawing-count') === '1', '1H canvas did not receive the Box')
+  expect(await blueHandlePixels() > 0, 'Box handles were not rendered on 1H')
+
+  await card().locator('select[aria-label="Timeframe"]').selectOption('300')
+  await page.waitForFunction(() => Number(document.querySelector('.canvas-chart')?.dataset.candleCount || 0) >= 200)
+  const after = (await storedDrawings())[0]
+  expect(after.id === before.id && after.a.time === before.a.time && after.a.price === before.a.price, 'Box anchors changed on 5m')
+  expect(await card().locator('.canvas-chart').getAttribute('data-drawing-count') === '1', '5m canvas did not receive the shared Box')
+  expect(await blueHandlePixels() > 0, 'Box handles were not visible on 5m')
+  expect(await page.evaluate(() => Object.keys(localStorage).find((key) => key.startsWith('pcl-drawings:v3:'))) === sharedKey, 'timeframe switch changed the drawings storage key')
+})
+
+await test('legacy timeframe-specific drawings migrate together to the shared key', async () => {
+  await fresh()
+  const legacy = await page.evaluate(() => {
+    const panel = JSON.parse(localStorage.getItem('pcl-panels:v1'))[0]
+    const point = { time: Math.floor(Date.now()/1000), price: 101 }
+    const box = { id: 'legacy-box', type: 'rectangle', a: point, b: { time: point.time + 3600, price: 99 } }
+    const line = { id: 'legacy-line', type: 'trend', a: point, b: { time: point.time + 1800, price: 100 } }
+    localStorage.setItem(`pcl-drawings:v2:${panel.id}:${panel.symbol}:3600`, JSON.stringify([box]))
+    localStorage.setItem(`pcl-drawings:v2:${panel.id}:${panel.symbol}:300`, JSON.stringify([line]))
+    return { panel, ids: [box.id, line.id] }
+  })
+  await card().locator('select[aria-label="Timeframe"]').selectOption('3600')
+  await page.waitForFunction(() => Number(document.querySelector('.canvas-chart')?.dataset.candleCount || 0) >= 200)
+  const migrated = await storedDrawings()
+  expect(migrated.length === 2 && legacy.ids.every((id) => migrated.some((drawing) => drawing.id === id)), 'legacy drawings from both intervals were not merged')
+  const migrationState = await page.evaluate(({ panelId, symbol }) => ({
+    shared: localStorage.getItem(`pcl-drawings:v3:${panelId}:${symbol}`) !== null,
+    oldKeys: Object.keys(localStorage).filter((key) => key.startsWith(`pcl-drawings:v2:${panelId}:${symbol}:`))
+  }), { panelId: legacy.panel.id, symbol: legacy.panel.symbol })
+  expect(migrationState.shared && migrationState.oldKeys.length === 0, 'legacy storage was not migrated/retired safely')
+  await card().locator('select[aria-label="Timeframe"]').selectOption('300')
+  expect((await storedDrawings()).length === 2, 'migrated drawings were not shared on 5m')
 })
 
 await test('canvas responds to zoom and pan input', async () => {
