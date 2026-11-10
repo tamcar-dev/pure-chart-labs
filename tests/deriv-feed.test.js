@@ -26,7 +26,7 @@ class FakeWebSocket {
             { epoch: eightHourAnchor + 14400, open: 1.4, high: 1.6, low: 0.9, close: 1.5 },
             { epoch: eightHourAnchor + 21600, open: 1.5, high: 1.8, low: 1.2, close: 1.7 },
           ]
-        : [{ epoch: 1700000100, open: 1.1, high: 1.2, low: 1.0, close: 1.15 }]
+        : [{ epoch: request.granularity === 28800 ? eightHourAnchor : 1700000100, open: 1.1, high: 1.2, low: 1.0, close: 1.15 }]
       setTimeout(() => this.onmessage?.({ data: JSON.stringify({
         msg_type: 'candles',
         req_id: request.req_id,
@@ -90,13 +90,17 @@ test('connectDeriv aligns history, aggregates 8H from UTC 2H candles, and subscr
   assert.deepEqual(native.tick, { time: 1700000130, price: 1.175 })
 
   const eightHour = await runFakeFeed(28800)
-  const history = eightHour.requests.find((request) => request.ticks_history)
+  const history = eightHour.requests.find((request) => request.ticks_history && request.granularity === 28800)
+  const recentSource = eightHour.requests.find((request) => request.ticks_history && request.granularity === 7200)
   const ticks = eightHour.requests.find((request) => request.ticks === 'frxEURUSD')
-  assert.equal(history?.granularity, 7200, '8H history must come from 2H source candles')
+  assert.equal(history?.granularity, 28800, 'full 8H history should retain the native request')
   assert.equal(history?.adjust_start_time, 1)
+  assert.equal(recentSource?.granularity, 7200, 'recent 8H candles should be verified from 2H sources')
+  assert.equal(recentSource?.adjust_start_time, 1)
   assert.equal(ticks?.subscribe, 1)
-  assert.equal(eightHour.candles.length, 1)
-  assert.deepEqual(eightHour.candles[0], {
+  assert.equal(eightHour.requests.filter((request) => request.ticks_history).length, 2)
+  assert.equal(eightHour.candles.length, 2)
+  assert.deepEqual(eightHour.candles.at(-1), {
     time: eightHourAnchor,
     open: 1.1,
     high: 1.8,

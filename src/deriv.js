@@ -95,10 +95,8 @@ function mergeSourceCandles(sourceCandles, targetGranularity, buckets) {
 }
 
 export function connectDeriv({symbol,granularity,onCandles,onTick,onStatus}) {
-  const sourceGranularity = granularity === 8 * 60 * 60 ? 2 * 60 * 60 : granularity
-  const aggregationFactor = granularity / sourceGranularity
-  const sourceHistoryLimit = CANDLE_HISTORY_LIMIT * aggregationFactor + aggregationFactor - 1
-  const targetBuckets = new Map()
+  const sourceGranularity = granularity
+  const sourceHistoryLimit = CANDLE_HISTORY_LIMIT
   let ws=null,stopped=false,retryTimer=null,requestId=1,subscriptionId=null,attempt=0
   const pending=new Map()
   const send=payload=>{
@@ -109,8 +107,8 @@ export function connectDeriv({symbol,granularity,onCandles,onTick,onStatus}) {
     }
     return null
   }
-  const requestHistory=(end,count,subscribe=0)=>new Promise((resolve,reject)=>{
-    const req_id=send({ticks_history:symbol,count,end,style:'candles',granularity:sourceGranularity,adjust_start_time:1,...(subscribe?{subscribe}: {})})
+  const requestHistory=(end,count,requestGranularity=sourceGranularity)=>new Promise((resolve,reject)=>{
+    const req_id=send({ticks_history:symbol,count,end,style:'candles',granularity:requestGranularity,adjust_start_time:1})
     if(req_id==null){reject(new Error('History request could not be sent'));return}
     const timer=setTimeout(()=>{pending.delete(req_id);reject(new Error('Candle history request timed out'))},15000)
     pending.set(req_id,{resolve,reject,timer})
@@ -130,14 +128,23 @@ export function connectDeriv({symbol,granularity,onCandles,onTick,onStatus}) {
           const candles=(msg.candles||[]).map(c=>({time:Number(c.epoch??c.open_time??c.time),open:Number(c.open),high:Number(c.high),low:Number(c.low),close:Number(c.close)}))
             .filter(c=>Number.isFinite(c.time)&&[c.open,c.high,c.low,c.close].every(Number.isFinite))
           if(!candles.length)break
-          const targetCandles = aggregationFactor === 1 ? candles : mergeSourceCandles(candles, granularity, targetBuckets)
-          if(targetCandles.length)onCandles(targetCandles)
+          onCandles(candles)
           const oldest=Math.min(...candles.map(c=>c.time))
           if(oldest>=lastOldest)break
           lastOldest=oldest
           loaded+=candles.length
           end=String(Math.floor(oldest)-sourceGranularity)
           if(candles.length<count)break
+        }
+        if(!stopped&&granularity===8*60*60){
+          try{
+            const detail=await requestHistory('latest',1000,2*60*60)
+            if(detail.error)throw new Error(detail.error.message)
+            const sourceCandles=(detail.candles||[]).map(c=>({time:Number(c.epoch??c.open_time??c.time),open:Number(c.open),high:Number(c.high),low:Number(c.low),close:Number(c.close)}))
+              .filter(c=>Number.isFinite(c.time)&&[c.open,c.high,c.low,c.close].every(Number.isFinite))
+            const recent=mergeSourceCandles(sourceCandles,granularity,new Map())
+            if(recent.length)onCandles(recent)
+          }catch(error){console.warn('Recent 8H candle aggregation was unavailable; keeping native history',error)}
         }
         if(!stopped)send({ticks:symbol,subscribe:1})
       }catch(error){
@@ -148,7 +155,7 @@ export function connectDeriv({symbol,granularity,onCandles,onTick,onStatus}) {
       let msg;try{msg=JSON.parse(event.data)}catch{return}
       const waiting=pending.get(msg.req_id)
       if(waiting){clearTimeout(waiting.timer);pending.delete(msg.req_id);waiting.resolve(msg)}
-      if(msg.error){onStatus(`error: ${msg.error.message}`);return}
+      if(msg.error){if(!waiting)onStatus(`error: ${msg.error.message}`);return}
       if(msg.subscription?.id)subscriptionId=msg.subscription.id
       if(!waiting&&(msg.msg_type==='candles'||Array.isArray(msg.candles))){
         const bars=(msg.candles||[]).map(c=>({
