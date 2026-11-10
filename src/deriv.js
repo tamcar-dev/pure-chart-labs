@@ -72,7 +72,33 @@ export function fetchActiveSymbols(timeoutMs=9000) {
   })
 }
 
+function mergeSourceCandles(sourceCandles, targetGranularity, buckets) {
+  const touched = new Set()
+  for (const candle of sourceCandles) {
+    const time = Math.floor(candle.time / targetGranularity) * targetGranularity
+    let bucket = buckets.get(time)
+    if (!bucket) {
+      bucket = {time,open:candle.open,high:candle.high,low:candle.low,close:candle.close,firstTime:candle.time,lastTime:candle.time}
+      buckets.set(time, bucket)
+    } else {
+      bucket.high = Math.max(bucket.high, candle.high)
+      bucket.low = Math.min(bucket.low, candle.low)
+      if (candle.time <= bucket.firstTime) { bucket.open = candle.open; bucket.firstTime = candle.time }
+      if (candle.time >= bucket.lastTime) { bucket.close = candle.close; bucket.lastTime = candle.time }
+    }
+    touched.add(time)
+  }
+  return [...touched].map((time) => {
+    const {open,high,low,close} = buckets.get(time)
+    return {time,open,high,low,close}
+  }).sort((a,b)=>a.time-b.time)
+}
+
 export function connectDeriv({symbol,granularity,onCandles,onTick,onStatus}) {
+  const sourceGranularity = granularity === 8 * 60 * 60 ? 2 * 60 * 60 : granularity
+  const aggregationFactor = granularity / sourceGranularity
+  const sourceHistoryLimit = CANDLE_HISTORY_LIMIT * aggregationFactor + aggregationFactor - 1
+  const targetBuckets = new Map()
   let ws=null,stopped=false,retryTimer=null,requestId=1,subscriptionId=null,attempt=0
   const pending=new Map()
   const send=payload=>{
@@ -84,7 +110,7 @@ export function connectDeriv({symbol,granularity,onCandles,onTick,onStatus}) {
     return null
   }
   const requestHistory=(end,count,subscribe=0)=>new Promise((resolve,reject)=>{
-    const req_id=send({ticks_history:symbol,count,end,style:'candles',granularity,adjust_start_time:1,...(subscribe?{subscribe}: {})})
+    const req_id=send({ticks_history:symbol,count,end,style:'candles',granularity:sourceGranularity,adjust_start_time:1,...(subscribe?{subscribe}: {})})
     if(req_id==null){reject(new Error('History request could not be sent'));return}
     const timer=setTimeout(()=>{pending.delete(req_id);reject(new Error('Candle history request timed out'))},15000)
     pending.set(req_id,{resolve,reject,timer})
@@ -97,19 +123,20 @@ export function connectDeriv({symbol,granularity,onCandles,onTick,onStatus}) {
       attempt=0;onStatus('connected')
       try{
         let end='latest',loaded=0,lastOldest=Infinity
-        while(!stopped&&loaded<CANDLE_HISTORY_LIMIT){
-          const count=Math.min(1000,CANDLE_HISTORY_LIMIT-loaded)
+        while(!stopped&&loaded<sourceHistoryLimit){
+          const count=Math.min(1000,sourceHistoryLimit-loaded)
           const msg=await requestHistory(end,count)
           if(msg.error)throw new Error(msg.error.message)
           const candles=(msg.candles||[]).map(c=>({time:Number(c.epoch??c.open_time??c.time),open:Number(c.open),high:Number(c.high),low:Number(c.low),close:Number(c.close)}))
             .filter(c=>Number.isFinite(c.time)&&[c.open,c.high,c.low,c.close].every(Number.isFinite))
           if(!candles.length)break
-          onCandles(candles)
+          const targetCandles = aggregationFactor === 1 ? candles : mergeSourceCandles(candles, granularity, targetBuckets)
+          if(targetCandles.length)onCandles(targetCandles)
           const oldest=Math.min(...candles.map(c=>c.time))
           if(oldest>=lastOldest)break
           lastOldest=oldest
           loaded+=candles.length
-          end=String(Math.floor(oldest)-granularity)
+          end=String(Math.floor(oldest)-sourceGranularity)
           if(candles.length<count)break
         }
         if(!stopped)send({ticks:symbol,subscribe:1})
@@ -123,7 +150,7 @@ export function connectDeriv({symbol,granularity,onCandles,onTick,onStatus}) {
       if(waiting){clearTimeout(waiting.timer);pending.delete(msg.req_id);waiting.resolve(msg)}
       if(msg.error){onStatus(`error: ${msg.error.message}`);return}
       if(msg.subscription?.id)subscriptionId=msg.subscription.id
-      if(msg.msg_type==='candles'||Array.isArray(msg.candles)){
+      if(!waiting&&(msg.msg_type==='candles'||Array.isArray(msg.candles))){
         const bars=(msg.candles||[]).map(c=>({
           time:Number(c.epoch??c.open_time??c.time),
           open:Number(c.open),high:Number(c.high),low:Number(c.low),close:Number(c.close)
