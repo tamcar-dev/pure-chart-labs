@@ -84,7 +84,7 @@ export function connectDeriv({symbol,granularity,onCandles,onTick,onStatus}) {
     return null
   }
   const requestHistory=(end,count,subscribe=0)=>new Promise((resolve,reject)=>{
-    const req_id=send({ticks_history:symbol,count,end,style:'candles',granularity,...(subscribe?{subscribe}: {})})
+    const req_id=send({ticks_history:symbol,count,end,style:'candles',granularity,adjust_start_time:1,...(subscribe?{subscribe}: {})})
     if(req_id==null){reject(new Error('History request could not be sent'));return}
     const timer=setTimeout(()=>{pending.delete(req_id);reject(new Error('Candle history request timed out'))},15000)
     pending.set(req_id,{resolve,reject,timer})
@@ -109,10 +109,10 @@ export function connectDeriv({symbol,granularity,onCandles,onTick,onStatus}) {
           if(oldest>=lastOldest)break
           lastOldest=oldest
           loaded+=candles.length
-          end=String(Math.floor(oldest)-1)
+          end=String(Math.floor(oldest)-granularity)
           if(candles.length<count)break
         }
-        if(!stopped)await requestHistory('latest',1,1)
+        if(!stopped)send({ticks:symbol,subscribe:1})
       }catch(error){
         if(!stopped)onStatus(`history error: ${error.message}`)
       }
