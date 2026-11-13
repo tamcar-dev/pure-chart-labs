@@ -16,6 +16,18 @@ export function makePoint(time, price) {
   return isValidPoint({ time, price }) ? { time: Number(time), price: Number(price) } : null
 }
 
+export function calculatePositionMetrics(direction, entryPrice, stopPrice, targetPrice) {
+  if (!['long', 'short'].includes(direction) || ![entryPrice, stopPrice, targetPrice].every(Number.isFinite)) {
+    return { risk: null, reward: null, ratio: null, valid: false }
+  }
+  const risk = Math.abs(entryPrice - stopPrice)
+  const reward = Math.abs(targetPrice - entryPrice)
+  const validSide = direction === 'long'
+    ? stopPrice < entryPrice && targetPrice > entryPrice
+    : stopPrice > entryPrice && targetPrice < entryPrice
+  return { risk, reward, ratio: risk > 0 ? reward / risk : null, valid: risk > 0 && validSide }
+}
+
 export function drawingsStorageKey(panelId, symbol) {
   return `pcl-drawings:v3:${panelId}:${symbol}`
 }
@@ -32,9 +44,17 @@ export function parseStoredDrawings(raw) {
   for (const d of data) {
     if (!d || typeof d.id !== 'string' || !d.id) continue
     const type = d.type === 'line' ? 'trend' : d.type === 'box' ? 'rectangle' : d.type
-    if (!isToolId(type)) continue
+    if (!isToolId(type) && type !== 'position') continue
     const a = makePoint(d.a?.time, d.a?.price)
     if (!a) continue
+    if (type === 'position') {
+      if (!['long', 'short'].includes(d.direction)) continue
+      const b = makePoint(d.b?.time, d.b?.price)
+      const c = makePoint(d.c?.time, d.c?.price)
+      if (!b || !c) continue
+      out.push({ id: d.id, type, direction: d.direction, a, b, c })
+      continue
+    }
     if (TOOL_POINTS[type] === 1) {
       out.push({ id: d.id, type, a })
       continue

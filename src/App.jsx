@@ -88,7 +88,7 @@ function ChartPanel({ panel, markets, onChange, onRemove, tool, onDrawingCreated
   const label = selectedMarket?.display_name || panel.symbol
   const priceDecimals = selectedMarket?.decimals ?? null
   const timeframe = TIMEFRAMES.find((x) => x[1] === panel.tf)?.[0] || `${panel.tf}s`
-  const activeTool = tool === 'trend' ? 'trendline' : tool === 'rectangle' ? 'rectangle' : 'cursor'
+  const activeTool = tool === 'trend' ? 'trendline' : tool === 'rectangle' ? 'rectangle' : tool === 'long' ? 'long_position' : tool === 'short' ? 'short_position' : 'cursor'
   const marketGroups = useMemo(() => {
     const groups = new Map()
     for (const market of markets) {
@@ -175,8 +175,9 @@ function ChartPanel({ panel, markets, onChange, onRemove, tool, onDrawingCreated
   const visibleFormingIndex = mode === 'REPLAY' ? -1 : Math.min(formingIndex, canvasCandles.length - 1)
   const canvasDrawings = useMemo(() => view.history.present.map((drawing) => ({
     id: drawing.id,
-    type: drawing.type === 'trend' ? 'trendline' : drawing.type === 'rectangle' ? 'rectangle' : drawing.type,
-    points: [drawing.a, drawing.b].filter(Boolean).map((point) => ({ timestamp: point.time * 1000, price: point.price })),
+    type: drawing.type === 'position' ? `${drawing.direction}_position` : drawing.type === 'trend' ? 'trendline' : drawing.type === 'rectangle' ? 'rectangle' : drawing.type,
+    points: (drawing.type === 'position' ? [drawing.a, drawing.b, drawing.c] : [drawing.a, drawing.b].filter(Boolean))
+      .map((point) => ({ timestamp: point.time * 1000, price: point.price })),
     color: drawing.color,
     hidden: drawing.hidden
   })), [view.history.present])
@@ -206,6 +207,22 @@ function ChartPanel({ panel, markets, onChange, onRemove, tool, onDrawingCreated
   const hasDrawings = view.history.present.length > 0
 
   function addCanvasDrawing(drawing) {
+    if (drawing.type === 'long_position' || drawing.type === 'short_position') {
+      const [entry, stop, target] = drawing.points || []
+      if (!entry || !stop || !target) return
+      const targetTime = target.timestamp / 1000
+      const saved = {
+        id: drawing.id,
+        type: 'position',
+        direction: drawing.type === 'long_position' ? 'long' : 'short',
+        a: { time: entry.timestamp / 1000, price: entry.price },
+        b: { time: targetTime, price: stop.price },
+        c: { time: targetTime, price: target.price },
+      }
+      updateView((v) => ({ history: commit(v.history, [...v.history.present, saved]), selectedId: null }))
+      onDrawingCreated?.()
+      return
+    }
     const type = drawing.type === 'trendline' ? 'trend' : drawing.type === 'rectangle' ? 'rectangle' : null
     if (!type || drawing.points.length < 2) return
     const [a,b] = drawing.points
@@ -228,6 +245,11 @@ function ChartPanel({ panel, markets, onChange, onRemove, tool, onDrawingCreated
     const converted = { time: point.timestamp / 1000, price: point.price }
     updateView((v) => ({ history: { ...v.history, present: v.history.present.map((d) => {
       if (d.id !== id) return d
+      if (d.type === 'position') {
+        if (pointIndex === 0) return { ...d, a: converted }
+        if (pointIndex === 1) return { ...d, b: converted, c: { ...d.c, time: converted.time } }
+        if (pointIndex === 2) return { ...d, b: { ...d.b, time: converted.time }, c: converted }
+      }
       return pointIndex === 0 ? { ...d, a: converted } : { ...d, b: converted }
     }) } }))
   }
@@ -237,7 +259,8 @@ function ChartPanel({ panel, markets, onChange, onRemove, tool, onDrawingCreated
     updateView((v) => ({ history: { ...v.history, present: v.history.present.map((d) => d.id !== id ? d : {
       ...d,
       a: { time: d.a.time + deltaSeconds, price: d.a.price + deltaPrice },
-      ...(d.b ? { b: { time: d.b.time + deltaSeconds, price: d.b.price + deltaPrice } } : {})
+      ...(d.b ? { b: { time: d.b.time + deltaSeconds, price: d.b.price + deltaPrice } } : {}),
+      ...(d.c ? { c: { time: d.c.time + deltaSeconds, price: d.c.price + deltaPrice } } : {})
     }) } }))
   }
 
@@ -348,8 +371,8 @@ export default function App(){
     </header>
     <div className="toolstrip">
       <span>DRAW</span>
-      {[['trend','／','Line'],['rectangle','□','Box']].map(([id,glyph,title])=><button key={id} title={title} className={tool===id?'selected':''} onClick={()=>setTool(tool===id?null:id)}>{glyph}</button>)}
-      <span className="tool-hint">{tool?'Drag or click two points · Esc cancels · ⌖ returns to cursor':'Cursor: select/move drawings · Delete removes selected · Ctrl+Z undoes'}</span>
+      {[['trend','／','Line'],['rectangle','□','Box'],['long','↗','Long Position'],['short','↘','Short Position']].map(([id,glyph,title])=><button key={id} title={title} aria-label={title} className={tool===id?'selected':''} onClick={()=>setTool(tool===id?null:id)}>{glyph}</button>)}
+      <span className="tool-hint">{tool==='long'||tool==='short'?'Click Entry, Stop, Target · Esc cancels · ⌖ returns to cursor':tool?'Drag or click two points · Esc cancels · ⌖ returns to cursor':'Cursor: select/move drawings · Delete removes selected · Ctrl+Z undoes'}</span>
       {csvMessage&&<span className="csv-message">{csvMessage}</span>}
     </div>
     <section className={`workspace chart-grid count-${Math.min(panels.length,4)}`}>

@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   placePoint, createHistory, commit, undo, redo, parseStoredDrawings, pointFromPixel, toPixel,
-  hitTest, hitTestItems, drawingsStorageKey, makePoint
+  hitTest, hitTestItems, drawingsStorageKey, makePoint, calculatePositionMetrics
 } from '../src/drawings.js'
 
 // Linear fake scales: 1 px = 10 seconds on x, 1 px = 0.25 price units on y (price falls as y grows).
@@ -125,6 +125,27 @@ test('parseStoredDrawings migrates the earlier Line and Box names', () => {
     { id: 'box-1', type: 'box', a: { time: 5, price: 6 }, b: { time: 7, price: 8 } }
   ])
   assert.deepEqual(parseStoredDrawings(raw).map(d => d.type), ['trend', 'rectangle'])
+})
+
+test('parseStoredDrawings validates and preserves Long/Short position levels', () => {
+  const raw = JSON.stringify([
+    { id: 'long-1', type: 'position', direction: 'long', a: { time: 1, price: 100 }, b: { time: 3, price: 95 }, c: { time: 3, price: 110 } },
+    { id: 'short-1', type: 'position', direction: 'short', a: { time: 1, price: 100 }, b: { time: 3, price: 105 }, c: { time: 3, price: 90 } },
+    { id: 'bad-direction', type: 'position', direction: 'sideways', a: { time: 1, price: 100 }, b: { time: 3, price: 95 }, c: { time: 3, price: 110 } },
+    { id: 'missing-target', type: 'position', direction: 'long', a: { time: 1, price: 100 }, b: { time: 3, price: 95 } },
+  ])
+  const parsed = parseStoredDrawings(raw)
+  assert.deepEqual(parsed.map(d => d.id), ['long-1', 'short-1'])
+  assert.deepEqual(parsed[0].c, { time: 3, price: 110 })
+  assert.equal(parsed[1].direction, 'short')
+})
+
+test('risk/reward metrics are price-distance based and handle invalid or zero risk', () => {
+  assert.deepEqual(calculatePositionMetrics('long', 100, 95, 110), { risk: 5, reward: 10, ratio: 2, valid: true })
+  assert.deepEqual(calculatePositionMetrics('short', 100, 105, 90), { risk: 5, reward: 10, ratio: 2, valid: true })
+  assert.deepEqual(calculatePositionMetrics('long', 100, 105, 110), { risk: 5, reward: 10, ratio: 2, valid: false })
+  assert.deepEqual(calculatePositionMetrics('long', 100, 100, 110), { risk: 0, reward: 10, ratio: null, valid: false })
+  assert.deepEqual(calculatePositionMetrics('unknown', 100, 95, 110), { risk: null, reward: null, ratio: null, valid: false })
 })
 
 test('drawings storage key is shared across timeframes but isolated by panel and market', () => {

@@ -46,6 +46,15 @@ async function drawTwoPoints(fx1 = .3, fy1 = .35, fx2 = .65, fy2 = .65, i = 0) {
     return entry && JSON.parse(entry[1]).length > 0
   })
 }
+async function drawThreePoints(entry, stop, target) {
+  await clickAt(await at(entry[0], entry[1]))
+  await clickAt(await at(stop[0], stop[1]))
+  await clickAt(await at(target[0], target[1]))
+  await page.waitForFunction(() => {
+    const entry = Object.entries(localStorage).find(([key]) => key.startsWith('pcl-drawings:v3:'))
+    return entry && JSON.parse(entry[1]).length === 1
+  })
+}
 async function test(name, fn) {
   try { await fn(); results.push({ name, ok: true }) }
   catch (error) { results.push({ name, ok: false, detail: error.message.split('\n').slice(0, 3).join(' | ') }) }
@@ -87,6 +96,56 @@ await test('Box tool creates a persisted rectangle', async () => {
   await fresh(); await tool('Box').click(); await drawTwoPoints()
   const drawings = await storedDrawings()
   expect(drawings.length === 1 && drawings[0].type === 'rectangle', 'expected a persisted rectangle')
+})
+
+await test('Long Position creates a persisted overlay with a calculated risk/reward ratio', async () => {
+  await fresh(); await tool('Long Position').click()
+  await drawThreePoints([.40,.48], [.40,.66], [.64,.28])
+  const drawing = (await storedDrawings())[0]
+  const risk = Math.abs(drawing.a.price - drawing.b.price)
+  const reward = Math.abs(drawing.c.price - drawing.a.price)
+  expect(drawing.type === 'position' && drawing.direction === 'long', 'expected a persisted Long Position')
+  expect(drawing.b.price < drawing.a.price && drawing.c.price > drawing.a.price, 'Long stop/target levels are on the wrong sides of entry')
+  expect(drawing.b.time === drawing.c.time && risk > 0 && reward > 0 && Number.isFinite(reward / risk), 'position anchors or reward/risk ratio are invalid')
+  expect(await card().locator('.canvas-chart').getAttribute('data-position-count') === '1', 'canvas did not render the position overlay')
+  await page.keyboard.press('Control+z')
+  await page.waitForFunction(() => {
+    const entry = Object.entries(localStorage).find(([key]) => key.startsWith('pcl-drawings:v3:'))
+    return entry && JSON.parse(entry[1]).length === 0
+  })
+  await page.keyboard.press('Control+Shift+z')
+  await page.waitForFunction(() => {
+    const entry = Object.entries(localStorage).find(([key]) => key.startsWith('pcl-drawings:v3:'))
+    return entry && JSON.parse(entry[1]).length === 1
+  })
+  await page.reload()
+  await page.waitForFunction(() => document.querySelector('.canvas-chart')?.dataset.positionCount === '1')
+  expect((await storedDrawings())[0].direction === 'long', 'Long Position did not persist after reload')
+})
+
+await test('Short Position has inverse stop/target levels and editable stop with undo', async () => {
+  await fresh(); await tool('Short Position').click()
+  await drawThreePoints([.40,.48], [.40,.28], [.64,.68])
+  const before = (await storedDrawings())[0]
+  expect(before.type === 'position' && before.direction === 'short', 'expected a persisted Short Position')
+  expect(before.b.price > before.a.price && before.c.price < before.a.price, 'Short stop/target levels are on the wrong sides of entry')
+  await page.locator('.iconbtn[title="Cursor"]').click()
+  const handle = await at(.64,.28), destination = await at(.64,.22)
+  await page.mouse.move(handle.x, handle.y); await page.mouse.down()
+  await page.mouse.move(destination.x, destination.y, { steps: 8 }); await page.mouse.up()
+  await page.waitForFunction((original) => {
+    const entry = Object.entries(localStorage).find(([key]) => key.startsWith('pcl-drawings:v3:'))
+    if (!entry) return false
+    const drawing = JSON.parse(entry[1])[0]
+    return drawing && drawing.b.price !== original.b.price
+  }, before)
+  await page.keyboard.press('Control+z')
+  await page.waitForFunction((original) => {
+    const entry = Object.entries(localStorage).find(([key]) => key.startsWith('pcl-drawings:v3:'))
+    if (!entry) return false
+    const drawing = JSON.parse(entry[1])[0]
+    return drawing && drawing.b.price === original.b.price
+  }, before)
 })
 
 await test('Box can also be placed with a drag gesture', async () => {

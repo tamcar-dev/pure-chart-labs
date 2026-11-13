@@ -4,6 +4,8 @@ export const DRAW_TOOLS = [
   { id: 'horizontal', label: 'Horizontal Line', icon: 'Minus', points: 1 },
   { id: 'fibonacci', label: 'Fibonacci Retracement', icon: 'Rows3', points: 2 },
   { id: 'rectangle', label: 'Rectangle', icon: 'Square', points: 2 },
+  { id: 'long_position', label: 'Long Position', icon: 'TrendingUp', points: 3 },
+  { id: 'short_position', label: 'Short Position', icon: 'TrendingDown', points: 3 },
 ]
 
 export const FIB_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1, 1.618]

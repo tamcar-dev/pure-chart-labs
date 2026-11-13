@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useImperativeHandle, forwardRef } from 'react
 import { getTimeframe } from './chartSupport/timeframe.js';
 import { formatPrice, formatTimestamp, formatTimeScale, guessDecimals } from './chartSupport/format.js';
 import { DRAW_TOOLS, FIB_LEVELS, DEFAULT_DRAW_COLOR, createDrawing } from './chartSupport/drawings.js';
+import { calculatePositionMetrics } from './drawings.js';
 
 const MIN_PRICE_SCALE = 48;
 const MAX_PRICE_SCALE = 140;
@@ -84,6 +85,7 @@ const ChartCanvas = forwardRef(function ChartCanvas(
   const onSelectDrawingRef = useRef(onSelectDrawing);
   onSelectDrawingRef.current = onSelectDrawing;
   const drawInProgressRef = useRef(null);
+  const positionStageRef = useRef(0);
   const dragPointRef = useRef(null);
   const dragMoveRef = useRef(null);
   const dragEdgeRef = useRef(null);
@@ -143,6 +145,7 @@ const ChartCanvas = forwardRef(function ChartCanvas(
 
   useEffect(() => {
     drawInProgressRef.current = null;
+    positionStageRef.current = 0;
     scheduleDraw();
   }, [activeTool, theme, symbol, timeframeLabel, decimals, gridVisible, formingIndex, drawings]);
 
@@ -450,7 +453,15 @@ const ChartCanvas = forwardRef(function ChartCanvas(
       const y1 = yOfPrice(pts[0].price, hi, lo);
       const x2 = xOfTimestamp(pts[1].timestamp);
       const y2 = yOfPrice(pts[1].price, hi, lo);
-      if (d.type === 'trendline') {
+      if (d.type === 'long_position' || d.type === 'short_position') {
+        const xs = pts.map((p) => xOfTimestamp(p.timestamp));
+        const ys = pts.map((p) => yOfPrice(p.price, hi, lo));
+        const left = Math.min(...xs) - 8;
+        const right = Math.max(...xs) + 8;
+        const top = Math.min(...ys) - 8;
+        const bottom = Math.max(...ys) + 8;
+        if (mx >= left && mx <= right && my >= top && my <= bottom) return d.id;
+      } else if (d.type === 'trendline') {
         if (pointToSegment(mx, my, x1, y1, x2, y2) <= 9) return d.id;
       } else {
         const left = Math.min(x1, x2) - 8;
@@ -496,6 +507,26 @@ const ChartCanvas = forwardRef(function ChartCanvas(
     const snapped = pointAt(e.clientX - rect.left, e.clientY - rect.top);
     if (!snapped) return;
     const { timestamp: ts, price } = snapped;
+    if (tool === 'long_position' || tool === 'short_position') {
+      const point = { timestamp: ts, price };
+      const progress = drawInProgressRef.current;
+      if (!progress) {
+        drawInProgressRef.current = createDrawing(tool, [{ ...point }, { ...point }, { ...point }]);
+        positionStageRef.current = 1;
+      } else if (positionStageRef.current === 1) {
+        progress.points[1] = point;
+        positionStageRef.current = 2;
+      } else {
+        progress.points[2] = point;
+        progress.points[1] = { ...progress.points[1], timestamp: ts };
+        onAddDrawingRef.current?.(progress);
+        drawInProgressRef.current = null;
+        positionStageRef.current = 0;
+      }
+      drawDragRef.current = null;
+      scheduleDraw();
+      return;
+    }
     const pts = toolPoints(tool);
     if (pts <= 1) {
       onAddDrawingRef.current?.(createDrawing(tool, [{ timestamp: ts, price }]));
@@ -769,7 +800,11 @@ const ChartCanvas = forwardRef(function ChartCanvas(
     } else if (drawInProgressRef.current) {
       const snapped = pointAt(mx, my);
       if (snapped) {
-        drawInProgressRef.current.points[1] = snapped;
+        if (drawInProgressRef.current.type === 'long_position' || drawInProgressRef.current.type === 'short_position') {
+          drawInProgressRef.current.points[positionStageRef.current] = snapped;
+        } else {
+          drawInProgressRef.current.points[1] = snapped;
+        }
       }
       if (
         drawDragRef.current &&
@@ -882,6 +917,7 @@ const ChartCanvas = forwardRef(function ChartCanvas(
     if (e.key === 'Escape') {
       crossRef.current = null;
       drawInProgressRef.current = null;
+      positionStageRef.current = 0;
       scheduleDraw();
     } else if (e.key === 'Backspace' || e.key === 'Delete') {
       if (selectedIdRef.current) onDeleteDrawingRef.current?.(selectedIdRef.current);
@@ -1162,6 +1198,10 @@ const ChartCanvas = forwardRef(function ChartCanvas(
       return;
     }
 
+    if (d.type === 'long_position' || d.type === 'short_position') {
+      drawPosition(ctx, a, hi, lo, dec, d, selected);
+      return;
+    }
     if (pts.length < 2) return;
     const x1 = xOfTimestamp(pts[0].timestamp);
     const y1 = yOfPrice(pts[0].price, hi, lo);
@@ -1216,6 +1256,78 @@ const ChartCanvas = forwardRef(function ChartCanvas(
       ctx.stroke();
       ctx.globalAlpha = prevAlpha;
     }
+  }
+
+  function drawPosition(ctx, a, hi, lo, dec, d, selected) {
+    const [entry, stop, target] = d.points || [];
+    if (!entry || !stop || !target) return;
+    const startX = xOfTimestamp(entry.timestamp);
+    const endX = xOfTimestamp(target.timestamp);
+    const left = Math.max(0, Math.min(startX, endX));
+    const right = Math.min(a.w, Math.max(startX, endX));
+    const width = Math.max(1, right - left);
+    const entryY = yOfPrice(entry.price, hi, lo);
+    const stopY = yOfPrice(stop.price, hi, lo);
+    const targetY = yOfPrice(target.price, hi, lo);
+    const direction = d.type === 'long_position' ? 'long' : 'short';
+    const metrics = calculatePositionMetrics(direction, entry.price, stop.price, target.price);
+    const profit = '#26a69a';
+    const risk = '#ef5350';
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(a.x, a.y, a.w, a.timeY - a.y);
+    ctx.clip();
+    ctx.globalAlpha = 0.17;
+    ctx.fillStyle = profit;
+    ctx.fillRect(left, Math.min(entryY, targetY), width, Math.max(1, Math.abs(targetY - entryY)));
+    ctx.fillStyle = risk;
+    ctx.fillRect(left, Math.min(entryY, stopY), width, Math.max(1, Math.abs(stopY - entryY)));
+
+    ctx.globalAlpha = 0.95;
+    ctx.lineWidth = selected ? 2.5 : 1.5;
+    for (const [y, color] of [[targetY, profit], [entryY, '#e6b85c'], [stopY, risk]]) {
+      ctx.strokeStyle = color;
+      ctx.setLineDash(y === entryY ? [] : [4, 3]);
+      ctx.beginPath();
+      ctx.moveTo(startX, y + 0.5);
+      ctx.lineTo(endX, y + 0.5);
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+
+    ctx.font = '10px ui-sans-serif, system-ui, sans-serif';
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'left';
+    const ratio = metrics.ratio == null ? '—' : `${metrics.ratio.toFixed(2)}:1`;
+    const summary = `${metrics.valid ? direction.toUpperCase() : 'CHECK LEVELS'} · R:R ${ratio} · Risk ${formatPrice(metrics.risk ?? 0, dec)} · Reward ${formatPrice(metrics.reward ?? 0, dec)}`;
+    const measuredWidth = ctx.measureText(summary).width + 10;
+    const labelWidth = Math.min(Math.max(90, measuredWidth), Math.max(90, a.w - 12));
+    const labelX = Math.max(4, Math.min(a.w - labelWidth - 4, right - labelWidth - 4));
+    const labelY = Math.max(10, Math.min(a.timeY - 10, Math.min(entryY, stopY, targetY) + 12));
+    ctx.globalAlpha = 0.9;
+    ctx.fillStyle = '#090d12';
+    ctx.fillRect(labelX, labelY - 8, labelWidth, 16);
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = metrics.valid ? '#e7edf5' : '#f0b84b';
+    ctx.fillText(summary, labelX + 5, labelY);
+
+    const drawTag = (name, price, y, color) => {
+      if (y < a.y + 8 || y > a.timeY - 6) return;
+      const tag = `${name} ${formatPrice(price, dec)}`;
+      const tagWidth = ctx.measureText(tag).width + 8;
+      const tagX = Math.max(left + 3, Math.min(a.w - tagWidth - 3, right - tagWidth - 3));
+      ctx.globalAlpha = 0.86;
+      ctx.fillStyle = '#090d12';
+      ctx.fillRect(tagX, y - 7, tagWidth, 14);
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = color;
+      ctx.fillText(tag, tagX + 4, y);
+    };
+    drawTag('TP', target.price, targetY, profit);
+    drawTag('Entry', entry.price, entryY, '#e6b85c');
+    drawTag('SL', stop.price, stopY, risk);
+    ctx.restore();
   }
 
   function drawCrosshair(ctx, a, hi, lo, dec, tf, th) {
@@ -1302,6 +1414,7 @@ const ChartCanvas = forwardRef(function ChartCanvas(
       data-candle-count={candles?.length || 0}
       data-price-decimals={decimals ?? ''}
       data-drawing-count={drawings?.length || 0}
+      data-position-count={(drawings || []).filter((drawing) => drawing.type === 'long_position' || drawing.type === 'short_position').length}
       data-selected-drawing={selectedId || ''}
       tabIndex={0}
       onKeyDown={onKeyDown}
