@@ -136,6 +136,25 @@ export function connectDeriv({symbol,granularity,onCandles,onTick,onStatus}) {
           end=String(Math.floor(oldest)-sourceGranularity)
           if(candles.length<count)break
         }
+        // Repair only the active 4H candle from finer history. The source
+        // window must contain the exact 4H boundary; otherwise its first
+        // minute cannot safely be treated as the candle OPEN.
+        if(!stopped&&granularity===4*60*60){
+          try{
+            const detail=await requestHistory('latest',240,60)
+            if(detail.error)throw new Error(detail.error.message)
+            const sourceCandles=(detail.candles||[]).map(c=>({time:Number(c.epoch??c.open_time??c.time),open:Number(c.open),high:Number(c.high),low:Number(c.low),close:Number(c.close)}))
+              .filter(c=>Number.isFinite(c.time)&&[c.open,c.high,c.low,c.close].every(Number.isFinite))
+            if(sourceCandles.length){
+              const latestTime=sourceCandles.reduce((latest,c)=>Math.max(latest,c.time),-Infinity)
+              const activeTime=Math.floor(latestTime/granularity)*granularity
+              if(sourceCandles.some(c=>c.time===activeTime)){
+                const active=mergeSourceCandles(sourceCandles,granularity,new Map()).find(c=>c.time===activeTime)
+                if(active)onCandles([active])
+              }
+            }
+          }catch(error){console.warn('Current 4H candle refinement unavailable; keeping native history',error)}
+        }
         if(!stopped&&granularity===8*60*60){
           try{
             const detail=await requestHistory('latest',1000,2*60*60)
