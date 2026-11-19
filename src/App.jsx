@@ -88,7 +88,7 @@ function ChartPanel({ panel, markets, onChange, onRemove, tool, onDrawingCreated
   const label = selectedMarket?.display_name || panel.symbol
   const priceDecimals = selectedMarket?.decimals ?? null
   const timeframe = TIMEFRAMES.find((x) => x[1] === panel.tf)?.[0] || `${panel.tf}s`
-  const activeTool = tool === 'trend' ? 'trendline' : tool === 'vertical' ? 'vertical' : tool === 'horizontal' ? 'horizontal' : tool === 'rectangle' ? 'rectangle' : tool === 'long' ? 'long_position' : tool === 'short' ? 'short_position' : 'cursor'
+  const activeTool = tool === 'trend' ? 'trendline' : tool === 'vertical' ? 'vertical' : tool === 'horizontal' ? 'horizontal' : tool === 'fibonacci' ? 'fibonacci' : tool === 'rectangle' ? 'rectangle' : tool === 'long' ? 'long_position' : tool === 'short' ? 'short_position' : 'cursor'
   const marketGroups = useMemo(() => {
     const groups = new Map()
     for (const market of markets) {
@@ -223,7 +223,7 @@ function ChartPanel({ panel, markets, onChange, onRemove, tool, onDrawingCreated
       onDrawingCreated?.()
       return
     }
-    const type = drawing.type === 'trendline' ? 'trend' : drawing.type === 'vertical' ? 'vertical' : drawing.type === 'horizontal' ? 'horizontal' : drawing.type === 'rectangle' ? 'rectangle' : null
+    const type = drawing.type === 'trendline' ? 'trend' : drawing.type === 'vertical' ? 'vertical' : drawing.type === 'horizontal' ? 'horizontal' : drawing.type === 'fibonacci' ? 'fibonacci' : drawing.type === 'rectangle' ? 'rectangle' : null
     const needsTwoPoints = type !== 'horizontal' && type !== 'vertical'
     if (!type || drawing.points.length < (needsTwoPoints ? 2 : 1)) return
     const [a,b] = drawing.points
@@ -372,7 +372,7 @@ export default function App(){
     </header>
     <div className="toolstrip">
       <span>DRAW</span>
-      {[['trend','／','Line'],['vertical','│','Vertical Line'],['horizontal','—','Horizontal Line'],['rectangle','□','Box'],['long','↗','Long Position'],['short','↘','Short Position']].map(([id,glyph,title])=><button key={id} title={title} aria-label={title} className={tool===id?'selected':''} onClick={()=>setTool(tool===id?null:id)}>{glyph}</button>)}
+      {[['trend','／','Line'],['vertical','│','Vertical Line'],['horizontal','—','Horizontal Line'],['fibonacci','F','Fibonacci'],['rectangle','□','Box'],['long','↗','Long Position'],['short','↘','Short Position']].map(([id,glyph,title])=><button key={id} title={title} aria-label={title} className={tool===id?'selected':''} onClick={()=>setTool(tool===id?null:id)}>{glyph}</button>)}
       <span className="tool-hint">{tool==='long'||tool==='short'?'Click Entry, Stop, Target · Esc cancels · ⌖ returns to cursor':tool?'Drag or click two points · Esc cancels · ⌖ returns to cursor':'Cursor: select/move drawings · Delete removes selected · Ctrl+Z undoes'}</span>
       {csvMessage&&<span className="csv-message">{csvMessage}</span>}
     </div>

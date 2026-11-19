@@ -763,10 +763,11 @@ const ChartCanvas = forwardRef(function ChartCanvas(
       viewRef.current.rightIndex = pinchRef.current.anchorIndex - 0.5 + (a.w - cmx) / bw;
       clampView();
     } else if (priceDragRef.current) {
-      // Vertical drag on the price scale: growth upward stretches the range,
-      // downward compresses it, anchored on the price under the pointer.
+      // Vertical drag on the price scale: dragging upward narrows the range
+      // (zoom in), while dragging downward widens it (zoom out), anchored on
+      // the price under the pointer.
       const zoomSpan = area();
-      let z = priceDragRef.current.startZoom * Math.exp((priceDragRef.current.startY - e.clientY) / 220);
+      let z = priceDragRef.current.startZoom * Math.exp((e.clientY - priceDragRef.current.startY) / 220);
       z = Math.max(0.02, Math.min(60, z));
       viewRef.current.priceZoom = z;
       viewRef.current.priceShift = 0;

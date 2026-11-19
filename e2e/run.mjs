@@ -114,6 +114,12 @@ await test('Horizontal Line tool creates a persisted price anchor', async () => 
   expect(!drawing.b, 'horizontal line should use a single price anchor')
 })
 
+await test('Fibonacci tool creates a persisted two-point retracement', async () => {
+  await fresh(); await tool('Fibonacci').click(); await drawTwoPoints(.32, .30, .68, .70)
+  const drawing = (await storedDrawings())[0]
+  expect(drawing.type === 'fibonacci' && Number.isFinite(drawing.a.price) && Number.isFinite(drawing.b.price), 'expected a persisted Fibonacci retracement')
+})
+
 await test('Box tool creates a persisted rectangle', async () => {
   await fresh(); await tool('Box').click(); await drawTwoPoints()
   const drawings = await storedDrawings()
