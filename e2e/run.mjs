@@ -92,6 +92,28 @@ await test('Line tool creates a time/price anchored line and persists it', async
   expect(Number.isFinite(drawings[0].a.time) && Number.isFinite(drawings[0].b.price), 'line is not anchored in time/price coordinates')
 })
 
+await test('Vertical Line tool creates a persisted time anchor', async () => {
+  await fresh(); await tool('Vertical Line').click(); await clickAt(await at(.52, .42))
+  await page.waitForFunction(() => {
+    const entry = Object.entries(localStorage).find(([key]) => key.startsWith('pcl-drawings:v3:'))
+    return entry && JSON.parse(entry[1]).length === 1
+  })
+  const drawing = (await storedDrawings())[0]
+  expect(drawing.type === 'vertical' && Number.isFinite(drawing.a.time), 'expected a persisted vertical line')
+  expect(!drawing.b, 'vertical line should use a single time anchor')
+})
+
+await test('Horizontal Line tool creates a persisted price anchor', async () => {
+  await fresh(); await tool('Horizontal Line').click(); await clickAt(await at(.52, .42))
+  await page.waitForFunction(() => {
+    const entry = Object.entries(localStorage).find(([key]) => key.startsWith('pcl-drawings:v3:'))
+    return entry && JSON.parse(entry[1]).length === 1
+  })
+  const drawing = (await storedDrawings())[0]
+  expect(drawing.type === 'horizontal' && Number.isFinite(drawing.a.price), 'expected a persisted horizontal line')
+  expect(!drawing.b, 'horizontal line should use a single price anchor')
+})
+
 await test('Box tool creates a persisted rectangle', async () => {
   await fresh(); await tool('Box').click(); await drawTwoPoints()
   const drawings = await storedDrawings()

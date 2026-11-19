@@ -1,6 +1,7 @@
 export const DRAW_TOOLS = [
   { id: 'cursor', label: 'Cursor', icon: 'MousePointer2', points: 0 },
   { id: 'trendline', label: 'Trend Line', icon: 'PenLine', points: 2 },
+  { id: 'vertical', label: 'Vertical Line', icon: 'BetweenVerticalStart', points: 1 },
   { id: 'horizontal', label: 'Horizontal Line', icon: 'Minus', points: 1 },
   { id: 'fibonacci', label: 'Fibonacci Retracement', icon: 'Rows3', points: 2 },
   { id: 'rectangle', label: 'Rectangle', icon: 'Square', points: 2 },

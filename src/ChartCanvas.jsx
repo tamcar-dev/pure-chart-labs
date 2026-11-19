@@ -416,16 +416,21 @@ const ChartCanvas = forwardRef(function ChartCanvas(
       const pts = d.points || [];
       for (let pi = 0; pi < pts.length; pi++) {
         const py = yOfPrice(pts[pi].price, hi, lo);
-        if (d.type === 'horizontal') {
-          if (Math.abs(my - py) <= 10 && mx >= a.x && mx <= a.w) {
-            return { drawingId: d.id, pointIndex: pi };
+          if (d.type === 'horizontal') {
+            if (Math.abs(my - py) <= 10 && mx >= a.x && mx <= a.w) {
+              return { drawingId: d.id, pointIndex: pi };
+            }
+          } else if (d.type === 'vertical') {
+            const px = xOfTimestamp(pts[pi].timestamp);
+            if (Math.abs(mx - px) <= 10 && my >= a.y && my <= a.timeY) {
+              return { drawingId: d.id, pointIndex: pi };
+            }
+          } else {
+            const px = xOfTimestamp(pts[pi].timestamp);
+            if (Math.hypot(mx - px, my - py) <= 12) {
+              return { drawingId: d.id, pointIndex: pi };
+            }
           }
-        } else {
-          const px = xOfTimestamp(pts[pi].timestamp);
-          if (Math.hypot(mx - px, my - py) <= 12) {
-            return { drawingId: d.id, pointIndex: pi };
-          }
-        }
       }
     }
     return null;
@@ -446,7 +451,7 @@ const ChartCanvas = forwardRef(function ChartCanvas(
     if (!drawings.length) return null;
     const { hi, lo } = visiblePriceRange();
     for (const d of drawings) {
-      if (d.hidden || d.type === 'horizontal') continue;
+      if (d.hidden || d.type === 'horizontal' || d.type === 'vertical') continue;
       const pts = d.points || [];
       if (pts.length < 2) continue;
       const x1 = xOfTimestamp(pts[0].timestamp);
@@ -1195,6 +1200,22 @@ const ChartCanvas = forwardRef(function ChartCanvas(
       ctx.textAlign = 'left';
       ctx.textBaseline = 'bottom';
       ctx.fillText(formatPrice(pts[0].price, dec), 6, y - 2);
+      return;
+    }
+
+    if (d.type === 'vertical' && pts[0]) {
+      const x = xOfTimestamp(pts[0].timestamp);
+      if (x < a.x || x > a.w) return;
+      ctx.setLineDash([4, 3]);
+      ctx.beginPath();
+      ctx.moveTo(x + 0.5, a.y);
+      ctx.lineTo(x + 0.5, a.timeY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.font = '10px ui-sans-serif, system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      ctx.fillText(formatTimestamp(pts[0].timestamp), x, a.y + 4);
       return;
     }
 
