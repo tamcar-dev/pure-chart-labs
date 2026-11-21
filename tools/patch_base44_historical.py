@@ -100,11 +100,29 @@ replace_once(
       fetchLayer(code, 3600, 3, sock),
       fetchLayer(code, 86400, 2, sock),
 """,
-"""fetchLayer(code, 60, 10, sock),
-      fetchLayer(code, 3600, 8, sock),
-      fetchLayer(code, 86400, 4, sock),
+"""fetchLayer(code, 60, 1, sock),
+     fetchLayer(code, 3600, 1, sock),
+     fetchLayer(code, 86400, 1, sock),
 """,
-'deeper initial cache fill')
+'throttled initial cache fill')
+
+replace_once(
+"""  async _fillStore(generation) {
+    const code = this.symbolMeta.code;
+    const sock = this.socket;
+    const [m1, h1, d1, ticks] = await Promise.all([
+""",
+"""  async _fillStore(generation) {
+    const code = this.symbolMeta.code;
+    const sock = this.socket;
+    // IndexedDB is the primary history source. A recent cache plus the live
+    // tick subscription is enough; do not redownload candle pages on every
+    // symbol/timeframe open. Stale or empty caches get one small refresh.
+    const cacheAge = this.store.savedAt ? Date.now() - this.store.savedAt : Infinity;
+    if (this.store.hasAny() && cacheAge >= 0 && cacheAge < 30 * 60 * 1000) return;
+    const [m1, h1, d1, ticks] = await Promise.all([
+""",
+'cache-first history refresh')
 
 replace_once(
 """  { id: 'trendline',  label: 'Trend Line',            points: 2, hint: 'Click or drag two points' },\n  { id: 'horizontal', label: 'Horizontal Line',       points: 1, hint: 'Click to place at a price' },\n  { id: 'fibonacci',  label: 'Fibonacci Retracement', points: 2, hint: 'Drag between swing points' },\n""",
