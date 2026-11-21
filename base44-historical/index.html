@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<meta name="theme-color" content="#0b0e11">
+<meta name="theme-color" content="#0b0f0d">
 <meta name="description" content="Pure Chart Labs — Deriv charts with offline candle history and drawing tools.">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/icons/purechart-icon.svg" type="image/svg+xml">
@@ -11,14 +11,14 @@
 <title>Pure Chart Labs</title>
 <style>
   :root, html[data-theme="dark"] {
-    --bg: #0b0e11; --panel: #11151b; --panel2: #1a2230; --border: #1f2733;
-    --text: #d1d5db; --muted: #8a93a6; --faint: #5f6677;
-    --accent: #26a69a; --accent-contrast: #06201d;
-    --blue: #4a9eff; --red: #ef5350; --amber: #f0b73e;
-    --overlay: rgba(0,0,0,.55);
+    --bg: #0b0f0d; --panel: #111713; --panel2: #151d17; --border: #29342b; --border-strong: #39483a;
+    --text: #d9e0d7; --muted: #849184; --faint: #657064;
+    --accent: #bacb72; --accent-contrast: #1b2412;
+    --blue: #4a9eff; --red: #c98278; --amber: #d8ab63;
+    --overlay: rgba(0,0,0,.58);
   }
   html[data-theme="light"] {
-    --bg: #ffffff; --panel: #f4f5f7; --panel2: #e9ecf0; --border: #dfe3e8;
+    --bg: #ffffff; --panel: #f4f5f7; --panel2: #e9ecf0; --border: #dfe3e8; --border-strong: #c7cdd2;
     --text: #1f2937; --muted: #5b6472; --faint: #9aa1ad;
     --accent: #0a9e8a; --accent-contrast: #ffffff;
     --blue: #2f7fd6; --red: #e0443f; --amber: #c58a10;
@@ -34,7 +34,7 @@
   }
   .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
   button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; padding: 0; }
-  button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 1px solid var(--accent); }
+  button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   svg.ic { display: block; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 
   /* ---------- boot overlay ---------- */
@@ -76,8 +76,10 @@
   #symCode { font-size: 10px; color: var(--faint); letter-spacing: .06em; }
   #symbolBtn .chev { color: var(--faint); }
 
-  #tfbar { display: flex; align-items: center; gap: 2px; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
-  #tfbar::-webkit-scrollbar { display: none; }
+  #tfbar { flex: 1 1 auto; min-width: 72px; display: flex; align-items: center; gap: 3px; flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scroll-behavior: smooth; scroll-snap-type: x proximity; scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+  #tfbar::-webkit-scrollbar { height: 4px; }
+  #tfbar::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 4px; }
+  #tfbar::-webkit-scrollbar-track { background: transparent; }
   #stylePop { position: absolute; z-index: 40; display: flex; flex-direction: column; gap: 7px; padding: 8px 10px; background: color-mix(in srgb, var(--panel) 96%, transparent); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 8px 24px rgba(0, 0, 0, .4); backdrop-filter: blur(6px); }
   #stylePop .sprow { display: flex; align-items: center; gap: 5px; }
   #stylePop .spbtn { min-width: 22px; height: 22px; padding: 0 6px; display: flex; align-items: center; justify-content: center; border-radius: 5px; border: 1px solid var(--border); background: transparent; color: var(--muted); font-size: 10.5px; font-weight: 600; cursor: pointer; }
@@ -96,7 +98,7 @@
   .symrow .dot.open { background: var(--up, #26a69a); opacity: 1; }
   .tfbtn {
     flex: none; min-width: 33px; height: 26px; padding: 0 7px; border-radius: 6px;
-    color: var(--muted); font-size: 12px; font-weight: 500; text-align: center;
+    color: var(--muted); font-size: 12px; font-weight: 500; text-align: center; scroll-snap-align: start;
   }
   .tfbtn:hover { background: var(--panel2); color: var(--text); }
   .tfbtn.active { background: var(--accent); color: var(--accent-contrast); font-weight: 700; }
@@ -117,6 +119,27 @@
   }
   #tfCustom:focus { color: var(--text); border-color: var(--accent); }
   #tfCustom.bad { border-color: var(--red, #ef5350); color: var(--red, #ef5350); }
+
+  @media (max-width: 900px) {
+    #topbar { gap: 6px; padding-inline: 8px; }
+    #tfbar { min-width: 64px; flex-basis: 120px; }
+    #connText { display: none; }
+    #connBadge { gap: 0; }
+    #btnLatest span, #btnImport span, #btnReplay span { display: none; }
+    #btnLatest, #btnImport, #btnReplay { width: 30px; padding: 0; justify-content: center; }
+  }
+  @media (max-width: 560px) {
+    #topbar { gap: 4px; padding-inline: 6px; }
+    #brand { gap: 4px; }
+    #brand .b1, #brand .b2 { font-size: 12px; }
+    #symbolBtn { gap: 5px; padding: 4px 5px; }
+    .symtxt { max-width: 92px; }
+    #symCode { display: none; }
+    #tfbar { min-width: 52px; gap: 1px; }
+    .tfbtn { min-width: 29px; padding-inline: 5px; font-size: 11px; }
+    #replayBar { left: 8px; right: 8px; bottom: 10px; transform: none; max-width: none; gap: 4px; padding: 5px; flex-wrap: wrap; justify-content: center; }
+    #replayBar .rpohlc { flex: 1 1 150px; min-width: 0; text-align: center; }
+  }
 
   .tb-spacer { flex: 1; }
   #connBadge { display: flex; align-items: center; gap: 7px; font-size: 11px; font-weight: 600; letter-spacing: .09em; color: var(--muted); font-family: ui-monospace, Menlo, Consolas, monospace; flex: none; }
@@ -271,7 +294,7 @@
   }
   #replayBar .rpbtn { width: 30px; height: 30px; border-radius: 7px; display: flex; align-items: center; justify-content: center; color: var(--muted); }
   #replayBar .rpbtn:hover { background: var(--panel2); color: var(--text); }
-  #replayBar .rpbtn.play { color: var(--accent); }
+  #replayBar .rpbtn.play { color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
   #replayBar .rpcnt { font-size: 11px; color: var(--muted); font-family: ui-monospace, Menlo, monospace; white-space: nowrap; }
   #replayBar .rpohlc { font-size: 11px; font-family: ui-monospace, Menlo, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   #replayBar .rpohlc .up { color: #2ecc71; } #replayBar .rpohlc .dn { color: var(--red); }
@@ -369,7 +392,7 @@
         <span class="symtxt"><span id="symName">Loading…</span><span id="symCode" class="mono"></span></span>
         <svg class="ic chev" width="14" height="14" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>
       </button>
-      <div id="tfbar"></div>
+      <div id="tfbar" role="group" aria-label="Chart timeframe"></div>
       <div class="tb-spacer"></div>
       <div id="connBadge"><i id="connDot"></i><span id="connText">CONNECTING…</span></div>
       <button id="btnLatest" class="tbtn" title="Go to latest candle"><svg class="ic" width="14" height="14" viewBox="0 0 24 24"><path d="M3 12h15"/><path d="m12 6 6 6-6 6"/><path d="M21 5v14"/></svg><span>Latest</span></button>
@@ -786,8 +809,8 @@ function pipDecimals(pip) {
 /* ---------------- lib/chart/themes.js ---------------- */
 const THEMES = {
   dark: {
-    bg: '#0b0e11', scaleBg: '#11151b', grid: '#1a2129', text: '#d1d5db', muted: '#8a93a6',
-    bull: '#26a69a', bear: '#ef5350', crosshair: '#758090', border: '#1f2733',
+    bg: '#0b0f0d', scaleBg: '#111713', grid: '#202821', text: '#d9e0d7', muted: '#849184',
+    bull: '#26a69a', bear: '#ef5350', crosshair: '#758090', border: '#29342b',
   },
   light: {
     bg: '#ffffff', scaleBg: '#f6f7f8', grid: '#e8ebef', text: '#1f2937', muted: '#6b7280',
@@ -3695,6 +3718,14 @@ function doSync() {
 /* ---------------- topbar ---------------- */
 function initTopbar() {
   renderTfBar();
+  const bar = $('#tfbar');
+  bar.addEventListener('wheel', (event) => {
+    if (event.target instanceof Element && event.target.closest('#tfCustom')) return;
+    if (Math.abs(event.deltaY) <= Math.abs(event.deltaX) || bar.scrollWidth <= bar.clientWidth) return;
+    const delta = event.deltaMode === 1 ? event.deltaY * 16 : event.deltaMode === 2 ? event.deltaY * bar.clientWidth : event.deltaY;
+    bar.scrollLeft += delta;
+    event.preventDefault();
+  }, { passive: false });
   // Close the multi-day picker when clicking anywhere else.
   document.addEventListener('click', () => {
     const m = document.querySelector('.tfddmenu');
@@ -3782,6 +3813,7 @@ function setTimeframe(tfLabel) {
   syncAll();
 }
 
+let lastAutoScrolledTimeframe = null;
 function renderTopbar(cd) {
   cd = cd || computeChartData();
   const badge = $('#modeBadge');
@@ -3793,6 +3825,21 @@ function renderTopbar(cd) {
   }
   const mbtn = document.querySelector('[data-tf="multiday"]');
   if (mbtn) mbtn.classList.toggle('active', MULTI_DAY_TIMEFRAMES.includes(settings.timeframe));
+  if (lastAutoScrolledTimeframe !== settings.timeframe) {
+    const tfbar = $('#tfbar');
+    const active = MULTI_DAY_TIMEFRAMES.includes(settings.timeframe)
+      ? tfbar.querySelector('[data-tf="multiday"]')
+      : Array.from(tfbar.querySelectorAll('.tfbtn')).find((button) =>
+        button.getAttribute('data-tf') === settings.timeframe && !button.closest('.tfddmenu')
+      );
+    if (active) {
+      const itemRect = active.getBoundingClientRect();
+      const railRect = tfbar.getBoundingClientRect();
+      if (itemRect.left < railRect.left) tfbar.scrollBy({ left: itemRect.left - railRect.left - 6, behavior: 'smooth' });
+      else if (itemRect.right > railRect.right) tfbar.scrollBy({ left: itemRect.right - railRect.right + 6, behavior: 'smooth' });
+    }
+    lastAutoScrolledTimeframe = settings.timeframe;
+  }
   $('#btnTheme').innerHTML = icon(settings.theme === 'dark' ? 'sun' : 'moon');
   const rb = $('#btnReplay');
   rb.classList.toggle('on', !!state.replay);
