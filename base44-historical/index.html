@@ -599,19 +599,14 @@ const NATIVE_GRANULARITY = {
 
 // Map a PureChart target timeframe to the Deriv source granularity to fetch.
 function sourceForTarget(targetLabel) {
-  if (NATIVE_GRANULARITY[targetLabel] != null) {
-    return { granularity: NATIVE_GRANULARITY[targetLabel], native: true, sourceLabel: targetLabel, construction: 'DERIV NATIVE' };
-  }
-  if (targetLabel === '6H')  return { granularity: 7200,  native: false, sourceLabel: '2H', construction: 'PURECHART AGGREGATED' };
-  if (targetLabel === '8H')  return { granularity: 7200,  native: false, sourceLabel: '2H', construction: 'PURECHART AGGREGATED' };
-  if (targetLabel === '12H') return { granularity: 14400, native: false, sourceLabel: '4H', construction: 'PURECHART AGGREGATED' };
-  if (targetLabel === '1.75D') return { granularity: 86400, native: false, sourceLabel: '1D', construction: 'PURECHART AGGREGATED' };
-  if (targetLabel === '3D')  return { granularity: 86400, native: false, sourceLabel: '1D', construction: 'PURECHART AGGREGATED' };
-  if (targetLabel === '5D')  return { granularity: 86400, native: false, sourceLabel: '1D', construction: 'PURECHART AGGREGATED' };
-  if (targetLabel === '7D')  return { granularity: 86400, native: false, sourceLabel: '1D', construction: 'PURECHART AGGREGATED' };
-  if (targetLabel === '1W')  return { granularity: 86400, native: false, sourceLabel: '1D', construction: 'PURECHART AGGREGATED' };
-  if (targetLabel === '1M')  return { granularity: 86400, native: false, sourceLabel: '1D', construction: 'PURECHART AGGREGATED' };
-  return { granularity: 60, native: true, sourceLabel: '1m', construction: 'DERIV NATIVE' };
+  const tf = getTimeframe(targetLabel);
+  const ms = tf.ms;
+  // Fetch hints never override the persistent cache. HistStore.layerFor()
+  // selects the best populated lower layer and supports non-divisor intervals.
+  if (ms < 60000) return { granularity: 60, native: true, sourceLabel: '1m', construction: 'CACHED/TICK FALLBACK' };
+  if (ms < 3600000) return { granularity: 60, native: true, sourceLabel: '1m', construction: 'CACHED LOCAL AGGREGATION' };
+  if (ms < 86400000) return { granularity: 3600, native: false, sourceLabel: '1H', construction: 'CACHED LOCAL AGGREGATION' };
+  return { granularity: 86400, native: false, sourceLabel: '1D', construction: 'CACHED LOCAL AGGREGATION' };
 }
 
 class CandleEngine {
@@ -1745,9 +1740,9 @@ class DerivFeed {
     const code = this.symbolMeta.code;
     const sock = this.socket;
     const [m1, h1, d1, ticks] = await Promise.all([
-      fetchLayer(code, 60, 3, sock),
-      fetchLayer(code, 3600, 3, sock),
-      fetchLayer(code, 86400, 2, sock),
+      fetchLayer(code, 60, 10, sock),
+      fetchLayer(code, 3600, 8, sock),
+      fetchLayer(code, 86400, 4, sock),
       (async () => { try { return await fetchTickHistory(code, 1000, sock); } catch { return []; } })(),
     ]);
     if (generation !== this.generation) return;
@@ -1935,7 +1930,7 @@ const HistDB = {
   },
 };
 
-const HIST_LAYER_CAP = 6000;   // max candles per layer (oldest dropped)
+const HIST_LAYER_CAP = 12000;  // lower-timeframe cache retained for local aggregation
 const HIST_TICK_CAP = 4000;    // max cached ticks (sub-minute timeframes)
 
 class HistStore {
@@ -2052,22 +2047,21 @@ class HistStore {
     return repaired.length;
   }
 
-  // Pick the source layer for a target timeframe: the finest layer whose
-  // granularity divides the target AND whose coverage yields ≥100 bars;
-  // otherwise the coarsest valid layer (which maximises bar depth).
+  // Pick a populated cached layer that is not coarser than the target.
+  // Exact divisibility is intentionally not required: custom 1.75D (42h)
+  // aggregates from cached daily candles instead of falling back to ticks.
   layerFor(tf) {
     const ms = tf.ms;
     if (ms < 60000) return { name: 'ticks', gran: Math.max(1, Math.round(ms / 1000)) };
     const cands = [['m1', 60000], ['h1', 3600000], ['d1', 86400000]]
-      .filter(([, g]) => ms >= g && ms % g === 0);
+      .filter(([, g]) => ms >= g)
+      .filter(([name]) => this[name].length > 2);
     if (!cands.length) return { name: 'ticks', gran: Math.max(1, Math.round(ms / 1000)) };
     let pick = cands[cands.length - 1];
     for (const cand of cands) {
       const arr = this[cand[0]];
-      if (arr.length > 2) {
-        const span = arr[arr.length - 1].timestamp - arr[0].timestamp;
-        if (span / ms >= 100) { pick = cand; break; }
-      }
+      const span = arr[arr.length - 1].timestamp - arr[0].timestamp;
+      if (span / ms >= 100) { pick = cand; break; }
     }
     return { name: pick[0], gran: pick[1] };
   }
