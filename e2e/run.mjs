@@ -32,7 +32,8 @@ const card = (i = 0) => page.locator('.chart-card').nth(i)
 const canvas = (i = 0) => card(i).locator('[data-testid="chart-canvas"]')
 const chartBox = async (i = 0) => canvas(i).boundingBox()
 const at = async (fx, fy, i = 0) => { const b = await chartBox(i); return { x: b.x + b.width * fx, y: b.y + b.height * fy } }
-const tool = (name) => page.locator(`.toolstrip button[title="${name}"]`)
+const tool = (name) => page.locator(`.toolstrip button[aria-label="${name} drawing tool"]`)
+const timeframe = (name, i = 0) => card(i).getByRole('button', { name, exact: true })
 const storedDrawings = async () => page.evaluate(() => {
   const entry = Object.entries(localStorage).find(([key]) => key.startsWith('pcl-drawings:v3:'))
   return entry ? JSON.parse(entry[1]) : []
@@ -83,6 +84,45 @@ await test('market picker includes non-synthetic Deriv symbols grouped by catego
   await select.selectOption('frxUSDJPY')
   await page.waitForFunction(() => document.querySelector('.canvas-chart')?.dataset.priceDecimals === '3')
   expect(await chart.getAttribute('data-price-decimals') === '3', 'selected symbol precision was not passed to the chart')
+})
+
+await test('all timeframe choices are available as buttons and update the active interval', async () => {
+  await fresh()
+  for (const name of ['1m', '2m', '5m', '10m', '15m', '30m', '1H', '2H', '4H', '8H', '1D']) {
+    expect(await timeframe(name).count() === 1, `missing ${name} timeframe button`)
+  }
+  await timeframe('1H').click()
+  expect(await timeframe('1H').getAttribute('aria-pressed') === 'true', 'selected timeframe was not highlighted')
+  expect(await timeframe('15m').getAttribute('aria-pressed') === 'false', 'previous timeframe remained selected')
+})
+
+await test('replay transport supports stepping, playback, and exit', async () => {
+  await fresh()
+  await card().locator('.replay-launch').click()
+  const count = card().locator('.replay-count')
+  const initial = Number((await count.innerText()).split('/')[0].replaceAll(',', '').trim())
+  await card().locator('button[title="Next candle"]').click()
+  const stepped = Number((await count.innerText()).split('/')[0].replaceAll(',', '').trim())
+  expect(stepped === initial + 1, 'step-forward did not reveal one candle')
+  await card().getByRole('button', { name: 'Play replay' }).click()
+  await page.waitForTimeout(650)
+  await card().getByRole('button', { name: 'Pause replay' }).click()
+  const played = Number((await count.innerText()).split('/')[0].replaceAll(',', '').trim())
+  expect(played > stepped, 'playback did not advance the replay')
+  await card().locator('button[title="Exit replay"]').click()
+  expect(await card().locator('.replay-bar').count() === 0, 'replay controls remained after exit')
+})
+
+await test('drawing tools apply only to the active chart', async () => {
+  await fresh()
+  await page.locator('.topbar .navbtn').first().click()
+  await page.waitForFunction(() => document.querySelectorAll('.chart-card').length === 2)
+  await page.waitForFunction(() => Number(document.querySelectorAll('.canvas-chart')[1]?.dataset.candleCount || 0) >= 200)
+  expect(await card(1).getAttribute('class').then((value) => value.includes('is-active')), 'new chart was not made active')
+  await tool('Line').click()
+  await drawTwoPoints(.3, .35, .65, .65, 1)
+  expect(await card().locator('.canvas-chart').getAttribute('data-drawing-count') === '0', 'inactive chart received the drawing')
+  expect(await card(1).locator('.canvas-chart').getAttribute('data-drawing-count') === '1', 'active chart did not receive the drawing')
 })
 
 await test('Line tool creates a time/price anchored line and persists it', async () => {
@@ -247,15 +287,15 @@ await test('drawing remains persisted after reload and is scoped to its chart an
   await page.waitForSelector('.canvas-chart__surface')
   await page.waitForFunction(() => Number(document.querySelector('.canvas-chart')?.dataset.candleCount || 0) >= 200)
   expect((await storedDrawings()).length === 1, 'drawing did not survive reload')
-  await card().locator('select[aria-label="Timeframe"]').selectOption('60')
+  await timeframe('1m').click()
   expect((await storedDrawings()).length === 1, 'switching timeframe hid the saved drawing')
-  await card().locator('select[aria-label="Timeframe"]').selectOption('900')
+  await timeframe('15m').click()
   expect((await storedDrawings()).length === 1, 'drawing was lost after switching back')
 })
 
 await test('Box drawn across the 1H viewport is framed and visible on 5m with the same anchors', async () => {
   await fresh()
-  await card().locator('select[aria-label="Timeframe"]').selectOption('3600')
+  await timeframe('1H').click()
   await page.waitForFunction(() => Number(document.querySelector('.canvas-chart')?.dataset.candleCount || 0) >= 200)
   await tool('Box').click(); await drawTwoPoints(.30,.35,.65,.65)
   const blueHandlePixels = () => canvas().evaluate((el) => {
@@ -272,7 +312,7 @@ await test('Box drawn across the 1H viewport is framed and visible on 5m with th
   expect(await card().locator('.canvas-chart').getAttribute('data-drawing-count') === '1', '1H canvas did not receive the Box')
   expect(await blueHandlePixels() > 0, 'Box handles were not rendered on 1H')
 
-  await card().locator('select[aria-label="Timeframe"]').selectOption('300')
+  await timeframe('5m').click()
   await page.waitForFunction(() => Number(document.querySelector('.canvas-chart')?.dataset.candleCount || 0) >= 200)
   const after = (await storedDrawings())[0]
   expect(after.id === before.id && after.a.time === before.a.time && after.a.price === before.a.price, 'Box anchors changed on 5m')
@@ -292,7 +332,7 @@ await test('legacy timeframe-specific drawings migrate together to the shared ke
     localStorage.setItem(`pcl-drawings:v2:${panel.id}:${panel.symbol}:300`, JSON.stringify([line]))
     return { panel, ids: [box.id, line.id] }
   })
-  await card().locator('select[aria-label="Timeframe"]').selectOption('3600')
+  await timeframe('1H').click()
   await page.waitForFunction(() => Number(document.querySelector('.canvas-chart')?.dataset.candleCount || 0) >= 200)
   const migrated = await storedDrawings()
   expect(migrated.length === 2 && legacy.ids.every((id) => migrated.some((drawing) => drawing.id === id)), 'legacy drawings from both intervals were not merged')
@@ -301,7 +341,7 @@ await test('legacy timeframe-specific drawings migrate together to the shared ke
     oldKeys: Object.keys(localStorage).filter((key) => key.startsWith(`pcl-drawings:v2:${panelId}:${symbol}:`))
   }), { panelId: legacy.panel.id, symbol: legacy.panel.symbol })
   expect(migrationState.shared && migrationState.oldKeys.length === 0, 'legacy storage was not migrated/retired safely')
-  await card().locator('select[aria-label="Timeframe"]').selectOption('300')
+  await timeframe('5m').click()
   expect((await storedDrawings()).length === 2, 'migrated drawings were not shared on 5m')
 })
 

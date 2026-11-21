@@ -13,8 +13,8 @@ const TIMEFRAMES = [
 const makeId = () => globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`
 const makePanel = (symbol='R_75') => ({ id: makeId(), symbol, tf:900 })
 const CANVAS_THEME = {
-  bg: '#090d12', scaleBg: '#0b1016', text: '#8290a3', grid: '#151d27',
-  bull: '#26a69a', bear: '#ef5350', crosshair: '#526174'
+  bg: '#0b0f0d', scaleBg: '#111711', text: '#829184', grid: '#1e281f',
+  bull: '#26a69a', bear: '#ef5350', crosshair: '#68745f'
 }
 
 function readDrawings(key, panelId, symbol) {
@@ -46,8 +46,9 @@ function writeDrawings(key, items) {
   catch (e) { console.warn('Drawing save failed', e); return false }
 }
 
-function ChartPanel({ panel, markets, onChange, onRemove, tool, onDrawingCreated }) {
+function ChartPanel({ panel, markets, onChange, onRemove, tool, activePanel, onActivate, onDrawingCreated }) {
   const canvasRef = useRef(null)
+  const timeframeStripRef = useRef(null)
   const barsRef = useRef([])
   const modeRef = useRef('LIVE')
   const panelIdRef = useRef(panel.id)
@@ -60,6 +61,7 @@ function ChartPanel({ panel, markets, onChange, onRemove, tool, onDrawingCreated
   const [formingIndex,setFormingIndex] = useState(-1)
   const [mode,setMode] = useState('LIVE')
   const [replayIndex,setReplayIndex] = useState(0)
+  const [isPlaying,setIsPlaying] = useState(false)
   const [store,setStore] = useState(null)
   const editBaseRef = useRef(null)
 
@@ -165,6 +167,22 @@ function ChartPanel({ panel, markets, onChange, onRemove, tool, onDrawingCreated
 
   useEffect(() => { modeRef.current = mode }, [mode])
 
+  useEffect(() => {
+    timeframeStripRef.current?.querySelector('.selected')?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' })
+  }, [panel.tf])
+
+  useEffect(() => {
+    if (mode !== 'REPLAY' || !isPlaying) return
+    const timer = window.setInterval(() => {
+      setReplayIndex((index) => Math.min(index + 1, barsRef.current.length))
+    }, 500)
+    return () => window.clearInterval(timer)
+  }, [mode, isPlaying])
+
+  useEffect(() => {
+    if (mode === 'REPLAY' && replayIndex >= bars.length) setIsPlaying(false)
+  }, [mode, replayIndex, bars.length])
+
   const displayedBars = useMemo(
     () => mode === 'REPLAY' ? bars.slice(0, replayIndex) : bars,
     [bars, mode, replayIndex]
@@ -186,10 +204,12 @@ function ChartPanel({ panel, markets, onChange, onRemove, tool, onDrawingCreated
     if (!barsRef.current.length) return
     const n = Math.max(1, barsRef.current.length - 100)
     setReplayIndex(n)
+    setIsPlaying(false)
     setMode('REPLAY')
   }
   const step=()=>setReplayIndex((index) => Math.min(index + 1, barsRef.current.length))
-  const exit=()=>{ setMode('LIVE'); setReplayIndex(0); canvasRef.current?.goToLatest() }
+  const stepBack=()=>setReplayIndex((index) => Math.max(1, index - 1))
+  const exit=()=>{ setIsPlaying(false); setMode('LIVE'); setReplayIndex(0); canvasRef.current?.goToLatest() }
   const undoDrawing = () => updateView((v) => ({ history: undo(v.history), selectedId: null }))
   const redoDrawing = () => updateView((v) => ({ history: redo(v.history), selectedId: null }))
   const clearDrawings = () => updateView((v) => ({ history: commit(v.history, []), selectedId: null }))
@@ -277,7 +297,9 @@ function ChartPanel({ panel, markets, onChange, onRemove, tool, onDrawingCreated
     }) } }))
   }
 
-  return <article className="chart-card">
+  const headerPrice = mode === 'REPLAY' ? displayedBars.at(-1)?.close ?? null : price
+
+  return <article className={`chart-card ${activePanel ? 'is-active' : ''}`} onPointerDownCapture={() => onActivate(panel.id)} onFocusCapture={() => onActivate(panel.id)}>
     <div className="chart-card-head">
       <select aria-label="Market" value={panel.symbol} onChange={(e)=>onChange({...panel,symbol:e.target.value})}>
         {!markets.some((market)=>market.symbol===panel.symbol)&&<option value={panel.symbol}>{panel.symbol} (not in active catalogue)</option>}
@@ -285,19 +307,31 @@ function ChartPanel({ panel, markets, onChange, onRemove, tool, onDrawingCreated
           {items.map((market)=><option key={market.symbol} value={market.symbol}>{market.display_name} · {market.symbol}</option>)}
         </optgroup>)}
       </select>
-      <select aria-label="Timeframe" value={panel.tf} onChange={(e)=>onChange({...panel,tf:Number(e.target.value)})}>
-        {TIMEFRAMES.map(([name,seconds])=><option key={seconds} value={seconds}>{name}</option>)}
-      </select>
-      <span className={`mini-status ${status==='connected'?'ok':''}`}>{status.toUpperCase()}</span>
-      <span className="head-price">{price==null?'—':price.toLocaleString(undefined,{minimumFractionDigits:priceDecimals??0,maximumFractionDigits:priceDecimals??5})}</span>
-      <button className="tiny-btn" onClick={()=>canvasRef.current?.goToLatest()} title="Go to latest candle">Fit</button>
-      <button className="tiny-btn" onClick={mode==='REPLAY'?exit:replay}>{mode==='REPLAY'?'Exit':'Replay'}</button>
-      {mode==='REPLAY'&&<button className="tiny-btn" onClick={step}>Step</button>}
-      <button className="tiny-btn" onClick={undoDrawing} title="Undo (Ctrl+Z)" disabled={!canUndo}>↶</button>
-      <button className="tiny-btn" onClick={redoDrawing} title="Redo (Ctrl+Shift+Z)" disabled={!canRedo}>↷</button>
-      <button className="tiny-btn danger" onClick={clearDrawings} title="Clear drawings" disabled={!hasDrawings}>Clear</button>
-      <button className="tiny-btn danger" onClick={()=>onRemove(panel.id)} title="Remove chart">×</button>
+      <span className={`mini-status ${status==='connected'?'ok':''}`} aria-label={`Connection ${status}`}>{status.toUpperCase()}</span>
+      <span className="head-price" title={mode === 'REPLAY' ? 'Replay candle close' : 'Latest price'}>{headerPrice==null?'—':headerPrice.toLocaleString(undefined,{minimumFractionDigits:priceDecimals??0,maximumFractionDigits:priceDecimals??5})}</span>
+      <button className="tiny-btn" onClick={()=>canvasRef.current?.goToLatest()} title="Go to latest candle">Latest</button>
     </div>
+    <div className="chart-control-row">
+      <div ref={timeframeStripRef} className="chart-timeframes" role="group" aria-label={`Timeframe for ${label}`}>
+        {TIMEFRAMES.map(([name,seconds])=><button type="button" key={seconds} className={`timeframe-btn ${panel.tf===seconds?'selected':''}`} aria-pressed={panel.tf===seconds} onClick={()=>onChange({...panel,tf:seconds})}>{name}</button>)}
+      </div>
+      <div className="chart-actions">
+        {mode==='LIVE'&&<button className="tiny-btn replay-launch" onClick={replay} disabled={!bars.length} title="Start replay from 100 candles before the latest">Replay</button>}
+        <button className="tiny-btn" onClick={undoDrawing} title="Undo (Ctrl+Z)" aria-label="Undo drawing" disabled={!canUndo}>↶</button>
+        <button className="tiny-btn" onClick={redoDrawing} title="Redo (Ctrl+Shift+Z)" aria-label="Redo drawing" disabled={!canRedo}>↷</button>
+        <button className="tiny-btn danger" onClick={clearDrawings} title="Clear drawings" disabled={!hasDrawings}>Clear</button>
+        <button className="tiny-btn danger" onClick={()=>onRemove(panel.id)} title="Remove chart" aria-label="Remove chart">×</button>
+      </div>
+    </div>
+    {mode==='REPLAY'&&<div className="replay-bar" aria-label="Replay controls">
+      <span className="replay-tag">REPLAY</span>
+      <button className="tiny-btn" onClick={stepBack} disabled={replayIndex<=1} title="Previous candle">−1</button>
+      <button className="tiny-btn replay-play" onClick={()=>setIsPlaying((playing)=>!playing)} disabled={replayIndex>=bars.length} aria-label={isPlaying?'Pause replay':'Play replay'}>{isPlaying?'Pause':'Play'}</button>
+      <button className="tiny-btn" onClick={step} disabled={replayIndex>=bars.length} title="Next candle">+1</button>
+      <input type="range" min="1" max={Math.max(1,bars.length)} value={Math.max(1,Math.min(replayIndex,bars.length))} onChange={(e)=>{setIsPlaying(false);setReplayIndex(Number(e.target.value))}} aria-label="Replay candle position" />
+      <span className="replay-count">{replayIndex.toLocaleString()} / {bars.length.toLocaleString()}</span>
+      <button className="tiny-btn" onClick={exit} title="Exit replay">Exit</button>
+    </div>}
     <div className={`chart-wrap ${tool?'tool-active':''}`}>
       <ChartCanvas
         ref={canvasRef}
@@ -332,17 +366,22 @@ function ChartPanel({ panel, markets, onChange, onRemove, tool, onDrawingCreated
 export default function App(){
   const [markets,setMarkets]=useState(MARKET_FALLBACKS)
   const [panels,setPanels]=useState(() => loadPanels(getBrowserStorage(), makePanel))
+  const [activePanelId,setActivePanelId]=useState(null)
   const [tool,setTool]=useState(null),[marketStatus,setMarketStatus]=useState('Loading markets…')
   const [csvMessage,setCsvMessage]=useState('')
   const fileRef=useRef(null)
   useEffect(()=>{ savePanels(getBrowserStorage(), panels) },[panels])
+  const activePanel=panels.find((panel)=>panel.id===activePanelId)||panels[0]
+  useEffect(()=>{
+    if(activePanel&&!panels.some((panel)=>panel.id===activePanelId))setActivePanelId(activePanel.id)
+  },[panels,activePanel,activePanelId])
   useEffect(()=>{
     let alive=true
     fetchActiveSymbols().then((list)=>{if(alive&&list.length){setMarkets(list);setMarketStatus(`${list.length} active symbols available`)}})
       .catch(()=>{if(alive)setMarketStatus('Using built-in market list')})
     return()=>{alive=false}
   },[])
-  const addChart=()=>setPanels((p)=>[...p,makePanel(p[0]?.symbol||'R_75')])
+  const addChart=()=>{const next=makePanel(activePanel?.symbol||'R_75');setPanels((p)=>[...p,next]);setActivePanelId(next.id)}
   const updatePanel=(next)=>setPanels((p)=>p.map((x)=>x.id===next.id?next:x))
   const importCSV=async (e)=>{
     const file=e.target.files?.[0];if(!file)return
@@ -370,13 +409,14 @@ export default function App(){
       <span className="status"><i className="online"/> LOCAL-FIRST</span>
     </header>
     <div className="toolstrip">
-      <span>DRAW</span>
-      {[['trend','／','Line'],['rectangle','□','Box'],['long','↗','Long Position'],['short','↘','Short Position']].map(([id,glyph,title])=><button key={id} title={title} aria-label={title} className={tool===id?'selected':''} onClick={()=>setTool(tool===id?null:id)}>{glyph}</button>)}
+      <span className="toolstrip-label">DRAW</span>
+      <span className="tool-target">TARGET <b>{activePanel?.symbol||'—'}</b> · {TIMEFRAMES.find((x)=>x[1]===activePanel?.tf)?.[0]||'—'}</span>
+      {[['trend','／','Line'],['rectangle','□','Box'],['long','↗','Long Position'],['short','↘','Short Position']].map(([id,glyph,title])=><button type="button" key={id} title={`${title} on ${activePanel?.symbol||'active chart'}`} aria-label={`${title} drawing tool`} aria-pressed={tool===id} className={tool===id?'selected':''} onClick={()=>{if(activePanel)setActivePanelId(activePanel.id);setTool(tool===id?null:id)}}>{glyph}</button>)}
       <span className="tool-hint">{tool==='long'||tool==='short'?'Click Entry, Stop, Target · Esc cancels · ⌖ returns to cursor':tool?'Drag or click two points · Esc cancels · ⌖ returns to cursor':'Cursor: select/move drawings · Delete removes selected · Ctrl+Z undoes'}</span>
       {csvMessage&&<span className="csv-message">{csvMessage}</span>}
     </div>
     <section className={`workspace chart-grid count-${Math.min(panels.length,4)}`}>
-      {panels.map((panel)=><ChartPanel key={panel.id} panel={panel} markets={markets} onChange={updatePanel} onRemove={(id)=>setPanels((p)=>p.length>1?p.filter((x)=>x.id!==id):p)} tool={tool} onDrawingCreated={()=>setTool(null)}/>) }
+      {panels.map((panel)=><ChartPanel key={panel.id} panel={panel} markets={markets} onChange={updatePanel} onRemove={(id)=>setPanels((p)=>p.length>1?p.filter((x)=>x.id!==id):p)} tool={panel.id===activePanel?.id?tool:null} activePanel={panel.id===activePanel?.id} onActivate={setActivePanelId} onDrawingCreated={()=>setTool(null)}/>) }
     </section>
     <footer className="bottom"><span>PURE CHART LABS · RESEARCH WORKSPACE</span><span>Public market data only · No trade execution · CSV and cached history stay in this browser</span></footer>
   </main>
