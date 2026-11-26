@@ -24,7 +24,7 @@ npm run preview
 - A short built-in volatility-index list is used if catalogue discovery is unavailable.
 - Each chart has its own symbol, timeframe, live market-data connection, local candle cache, replay state, and drawings.
 - Price axes and OHLC readouts use Deriv's per-symbol pip size to retain the quote precision; source candle values are not rounded.
-- Historical loading pages backward in requests of up to 1,000 candles, targeting 10,000 candles per chart when Deriv has that much history available.
+- Historical loading pages backward in requests of up to 1,000 candles until Deriv reports no further available history; the app does not impose a candle-count cap.
 - On 4H charts, the active bar is refreshed from recent 1-minute OHLC only when the source includes the exact 4H opening minute; this prevents a partial source window or a late first live tick from being mistaken for the bar's open.
 - Market data uses Deriv's public WebSocket endpoint; public market-data requests do not require account authentication.
 - The application does not request account credentials or execute trades.
@@ -50,7 +50,7 @@ The chart renderer and drawing interactions are custom implementations. They are
 
 ## Important limitations
 
-- The history target is subject to Deriv's available data, public API behavior, and market-specific access.
+- Historical depth is subject to Deriv's available data, public API behavior, and market-specific access; loading and rendering very deep history can use additional browser memory.
 - The application is a functional charting foundation, not a claim of complete TradingView parity.
 
 ## Tests

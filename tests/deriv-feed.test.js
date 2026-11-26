@@ -84,6 +84,53 @@ test('connectDeriv refines only the active 4H candle from aligned 1m history', a
   assert.deepEqual(fourHour.tick, { time: currentFourHourTime, price: 1.175 })
 })
 
+class DeepHistoryWebSocket {
+  static OPEN = 1
+  static CLOSED = 3
+  static sent = []
+  static historyPage = 0
+
+  constructor(url) {
+    this.url = url
+    this.readyState = DeepHistoryWebSocket.OPEN
+    setTimeout(() => this.onopen?.(), 0)
+  }
+
+  send(serialized) {
+    const request = JSON.parse(serialized)
+    DeepHistoryWebSocket.sent.push(request)
+    if (request.ticks_history) {
+      const page = DeepHistoryWebSocket.historyPage++
+      const count = page < 10 ? 1000 : 73
+      const lastIndex = 10072 - page * 1000
+      const firstIndex = Math.max(0, lastIndex - count + 1)
+      const candles = Array.from({ length: count }, (_, index) => {
+        const historyIndex = firstIndex + index
+        return {
+          epoch: 1_700_000_000 - (10072 - historyIndex) * 300,
+          open: 1 + historyIndex / 1_000_000,
+          high: 1.1 + historyIndex / 1_000_000,
+          low: 0.9 + historyIndex / 1_000_000,
+          close: 1.05 + historyIndex / 1_000_000,
+        }
+      })
+      setTimeout(() => this.onmessage?.({ data: JSON.stringify({ msg_type: 'candles', req_id: request.req_id, candles }) }), 0)
+    } else if (request.ticks) {
+      setTimeout(() => this.onmessage?.({ data: JSON.stringify({
+        msg_type: 'tick',
+        req_id: request.req_id,
+        tick: { epoch: 1_700_000_000, quote: 1.05, symbol: request.ticks },
+        subscription: { id: 'deep-history-subscription' },
+      }) }), 0)
+    }
+  }
+
+  close() {
+    this.readyState = DeepHistoryWebSocket.CLOSED
+    setTimeout(() => this.onclose?.(), 0)
+  }
+}
+
 async function runFakeFeed(granularity) {
   const descriptors = Object.fromEntries(['WebSocket', 'navigator', 'window'].map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]))
   FakeWebSocket.sent = []
@@ -142,4 +189,39 @@ test('connectDeriv aligns history, aggregates 8H from UTC 2H candles, and subscr
     close: 1.7,
   })
   assert.deepEqual(eightHour.tick, { time: eightHourAnchor + 7 * 3600 + 30, price: 1.175 })
+})
+
+test('connectDeriv keeps paging beyond 10,000 candles until the provider returns its final partial page', async () => {
+  const descriptors = Object.fromEntries(['WebSocket', 'navigator', 'window'].map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]))
+  DeepHistoryWebSocket.sent = []
+  DeepHistoryWebSocket.historyPage = 0
+  Object.defineProperty(globalThis, 'WebSocket', { configurable: true, writable: true, value: DeepHistoryWebSocket })
+  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { onLine: true } })
+  Object.defineProperty(globalThis, 'window', { configurable: true, value: { addEventListener() {}, removeEventListener() {} } })
+
+  let tick = null
+  const candles = []
+  let cleanup
+  try {
+    cleanup = connectDeriv({
+      symbol: 'frxEURUSD',
+      granularity: 300,
+      onCandles: (next) => candles.push(...next),
+      onTick: (next) => { tick = next },
+      onStatus() {},
+    })
+    const deadline = Date.now() + 3000
+    while (!tick && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 5))
+
+    const historyRequests = DeepHistoryWebSocket.sent.filter((request) => request.ticks_history)
+    assert.equal(historyRequests.length, 11)
+    assert.equal(candles.length, 10_073)
+    assert.equal(DeepHistoryWebSocket.sent.some((request) => request.ticks === 'frxEURUSD'), true)
+  } finally {
+    cleanup?.()
+    for (const key of ['WebSocket', 'navigator', 'window']) {
+      if (descriptors[key]) Object.defineProperty(globalThis, key, descriptors[key])
+      else delete globalThis[key]
+    }
+  }
 })

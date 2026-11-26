@@ -25,7 +25,7 @@ export async function saveCandles(symbol, granularity, candles) {
   });
   db.close();
 }
-export async function loadCandles(symbol, granularity, limit = 10000) {
+export async function loadCandles(symbol, granularity) {
   const db = await openDB();
   const rows = await new Promise((resolve, reject) => {
     const tx = db.transaction(STORE, 'readonly');
@@ -33,5 +33,5 @@ export async function loadCandles(symbol, granularity, limit = 10000) {
     req.onsuccess = () => resolve(req.result || []); req.onerror = () => reject(req.error);
   });
   db.close();
-  return rows.sort((a,b) => a.time - b.time).slice(-limit).map(({key, symbol_tf, ...c}) => c);
+  return rows.sort((a,b) => a.time - b.time).map(({key, symbol_tf, ...c}) => c);
 }
