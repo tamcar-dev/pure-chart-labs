@@ -1,5 +1,6 @@
 const WS_URL = 'wss://api.derivws.com/trading/v1/options/ws/public'
 const CANDLE_HISTORY_PAGE_SIZE = 1000
+export const CANDLE_HISTORY_LIMIT = 10000
 
 export function decimalsFromPipSize(pipSize) {
   const value = Number(pipSize)
@@ -96,6 +97,7 @@ function mergeSourceCandles(sourceCandles, targetGranularity, buckets) {
 
 export function connectDeriv({symbol,granularity,onCandles,onTick,onStatus}) {
   const sourceGranularity = granularity
+  const sourceHistoryLimit = CANDLE_HISTORY_LIMIT
   let ws=null,stopped=false,retryTimer=null,requestId=1,subscriptionId=null,attempt=0
   const pending=new Map()
   const send=payload=>{
@@ -119,9 +121,9 @@ export function connectDeriv({symbol,granularity,onCandles,onTick,onStatus}) {
     ws.onopen=async()=>{
       attempt=0;onStatus('connected')
       try{
-        let end='latest',lastOldest=Infinity
-        while(!stopped){
-          const count=CANDLE_HISTORY_PAGE_SIZE
+        let end='latest',loaded=0,lastOldest=Infinity
+        while(!stopped&&loaded<sourceHistoryLimit){
+          const count=Math.min(CANDLE_HISTORY_PAGE_SIZE,sourceHistoryLimit-loaded)
           const msg=await requestHistory(end,count)
           if(msg.error)throw new Error(msg.error.message)
           const candles=(msg.candles||[]).map(c=>({time:Number(c.epoch??c.open_time??c.time),open:Number(c.open),high:Number(c.high),low:Number(c.low),close:Number(c.close)}))
@@ -131,6 +133,7 @@ export function connectDeriv({symbol,granularity,onCandles,onTick,onStatus}) {
           const oldest=Math.min(...candles.map(c=>c.time))
           if(oldest>=lastOldest)break
           lastOldest=oldest
+          loaded+=candles.length
           end=String(Math.floor(oldest)-sourceGranularity)
           if(candles.length<count)break
         }

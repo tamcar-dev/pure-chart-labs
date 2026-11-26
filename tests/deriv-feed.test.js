@@ -191,7 +191,7 @@ test('connectDeriv aligns history, aggregates 8H from UTC 2H candles, and subscr
   assert.deepEqual(eightHour.tick, { time: eightHourAnchor + 7 * 3600 + 30, price: 1.175 })
 })
 
-test('connectDeriv keeps paging beyond 10,000 candles until the provider returns its final partial page', async () => {
+test('connectDeriv pages history up to 10,000 candles and then starts the live feed', async () => {
   const descriptors = Object.fromEntries(['WebSocket', 'navigator', 'window'].map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]))
   DeepHistoryWebSocket.sent = []
   DeepHistoryWebSocket.historyPage = 0
@@ -214,8 +214,8 @@ test('connectDeriv keeps paging beyond 10,000 candles until the provider returns
     while (!tick && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 5))
 
     const historyRequests = DeepHistoryWebSocket.sent.filter((request) => request.ticks_history)
-    assert.equal(historyRequests.length, 11)
-    assert.equal(candles.length, 10_073)
+    assert.equal(historyRequests.length, 10)
+    assert.equal(candles.length, 10_000)
     assert.equal(DeepHistoryWebSocket.sent.some((request) => request.ticks === 'frxEURUSD'), true)
   } finally {
     cleanup?.()

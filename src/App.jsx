@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import ChartCanvas from './ChartCanvas'
-import { connectDeriv, fetchActiveSymbols, MARKET_FALLBACKS } from './deriv'
+import { connectDeriv, fetchActiveSymbols, MARKET_FALLBACKS, CANDLE_HISTORY_LIMIT } from './deriv'
 import { loadCandles, saveCandles } from './db'
 import { parseCandleCSV } from './csv'
 import { getBrowserStorage, loadPanels, savePanels } from './panels'
@@ -114,11 +114,11 @@ function ChartPanel({ panel, markets, onChange, onRemove, tool, activePanel, onA
     setStatus(navigator.onLine ? 'connecting' : 'offline')
     ;(async () => {
       try {
-        const cached = await loadCandles(panel.symbol, panel.tf)
+        const cached = await loadCandles(panel.symbol, panel.tf, CANDLE_HISTORY_LIMIT)
         if (cancelled) return
         const merged = new Map(cached.map((bar) => [bar.time, bar]))
         barsRef.current.forEach((bar) => merged.set(bar.time, bar))
-        const next = [...merged.values()].sort((a,b) => a.time-b.time)
+        const next = [...merged.values()].sort((a,b) => a.time-b.time).slice(-CANDLE_HISTORY_LIMIT)
         barsRef.current = next
         setBars(next)
         if (next.length) setPrice(next.at(-1).close)
@@ -134,7 +134,7 @@ function ChartPanel({ panel, markets, onChange, onRemove, tool, activePanel, onA
         if (cancelled || !incoming.length) return
         const map = new Map(barsRef.current.map((bar) => [bar.time, bar]))
         incoming.forEach((bar) => map.set(bar.time, bar))
-        const next = [...map.values()].sort((a,b) => a.time-b.time)
+        const next = [...map.values()].sort((a,b) => a.time-b.time).slice(-CANDLE_HISTORY_LIMIT)
         barsRef.current = next
         setBars(next)
         setFormingIndex(next.length ? next.length - 1 : -1)
@@ -154,6 +154,7 @@ function ChartPanel({ panel, markets, onChange, onRemove, tool, activePanel, onA
           next = { time: start, open: tick.price, high: tick.price, low: tick.price, close: tick.price }
           nextBars.push(next)
         } else return
+        if (nextBars.length > CANDLE_HISTORY_LIMIT) nextBars.splice(0, nextBars.length - CANDLE_HISTORY_LIMIT)
         barsRef.current = nextBars
         setBars(nextBars)
         setFormingIndex(nextBars.length - 1)
